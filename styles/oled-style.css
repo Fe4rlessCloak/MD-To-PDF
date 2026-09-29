@@ -4,6 +4,16 @@
    High-contrast text, reduced blue light, minimal ink usage.
    ============================================================ */
 
+/* --- MERMAID NORMALISATION OPT-IN --- */
+/* Tells the Mermaid bootstrap to strip node-level inline text-colour
+   !important overrides after render, so the label rules further down
+   apply uniformly to nodes styled with `style X fill:…,color:…` in
+   Markdown. Author fill colours are preserved. The default light theme
+   omits this and keeps author colours untouched. */
+:root {
+    --mermaid-normalize: 1;
+}
+
 /* --- PAGE SETUP --- */
 @page {
     size: A4;

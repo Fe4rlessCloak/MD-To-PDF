@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { buildHtml } from '../src/core/build-html.js';
 
 const BODY = '<p>Hello <strong>world</strong></p>';
@@ -62,4 +63,16 @@ test('renders a title when provided and omits it otherwise', () => {
 test('escapes HTML special characters in the title', () => {
   const html = buildHtml({ bodyHtml: BODY, userCss: null, title: 'A & B <C> "D"' });
   assert.ok(html.includes('<title>A &amp; B &lt;C&gt; &quot;D&quot;</title>'));
+});
+
+test('bootstrap strips inline Mermaid text colours when a theme opts in', async () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  assert.ok(html.includes('--mermaid-normalize'));
+  assert.ok(html.includes("removeProperty('color')"));
+
+  const oled = await readFile(new URL('../styles/oled-style.css', import.meta.url), 'utf-8');
+  assert.ok(oled.includes('--mermaid-normalize: 1'));
+
+  const light = await readFile(new URL('../styles/style.css', import.meta.url), 'utf-8');
+  assert.ok(!light.includes('--mermaid-normalize'));
 });

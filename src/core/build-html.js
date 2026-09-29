@@ -97,6 +97,21 @@ await mermaid.run({
   querySelector: '.mermaid',
 });
 
+// Optionally strip Mermaid's inline text-colour overrides so the active
+// theme's stylesheet governs label text. Mermaid compiles style
+// directives (color) into inline !important declarations, which outrank
+// any stylesheet rule (even !important ones). Author fill colours are
+// left intact. Themes opt in by defining --mermaid-normalize (see
+// styles/oled-style.css).
+const normalize = getComputedStyle(document.documentElement)
+  .getPropertyValue('--mermaid-normalize')
+  .trim();
+if (normalize) {
+  document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
+    el.style.removeProperty('color');
+  });
+}
+
 // Emit basic render diagnostics for print-layout debugging.
 window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
   const svg = node.querySelector('svg');
