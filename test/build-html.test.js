@@ -70,9 +70,21 @@ test('bootstrap strips inline Mermaid text colours when a theme opts in', async 
   assert.ok(html.includes('--mermaid-normalize'));
   assert.ok(html.includes("removeProperty('color')"));
 
-  const oled = await readFile(new URL('../styles/oled-style.css', import.meta.url), 'utf-8');
-  assert.ok(oled.includes('--mermaid-normalize: 1'));
+  const readTheme = (name) =>
+    readFile(new URL(`../styles/${name}`, import.meta.url), 'utf-8');
 
-  const light = await readFile(new URL('../styles/style.css', import.meta.url), 'utf-8');
+  for (const theme of [
+    'oled-style.css',
+    'paper-style.css',
+    'contrast-style.css',
+    'compact-style.css',
+  ]) {
+    assert.ok(
+      (await readTheme(theme)).includes('--mermaid-normalize: 1'),
+      `${theme} should opt in to Mermaid normalisation`,
+    );
+  }
+
+  const light = await readTheme('style.css');
   assert.ok(!light.includes('--mermaid-normalize'));
 });

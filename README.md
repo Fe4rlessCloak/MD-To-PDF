@@ -6,7 +6,7 @@ A Node.js ESM CLI that converts Markdown into PDF using [Puppeteer](https://pptr
 - KaTeX-rendered LaTeX math
 - optional custom CSS injection
 - print-safe Mermaid scaling
-- alternate visual themes such as the OLED stylesheet // OLED IS STILL BUGGY WITH SVGs
+- five bundled print themes (default, OLED, warm paper, high contrast, compact)
 
 The main entrypoint is [`convert.js`](convert.js), which reads Markdown, builds HTML, renders Mermaid and KaTeX in the browser, and exports the final PDF.
 
@@ -19,8 +19,7 @@ The main entrypoint is [`convert.js`](convert.js), which reads Markdown, builds 
 - Block LaTeX support with [`$$...$$`](src/core/render-markdown.js:7)
 - Dynamic Mermaid scaling using [`.mermaid`](src/core/build-html.js:29) and [`.mermaid svg`](src/core/build-html.js:39)
 - Wait logic for both Mermaid and KaTeX rendering in [`renderPdf()`](src/core/render-pdf.js:73)
-- Standard light stylesheet in [`styles/style.css`](styles/style.css)
-- Alternate dark OLED stylesheet in [`styles/oled-style.css`](styles/oled-style.css) // BUGGY WITH SVGs
+- Bundled themes in [`styles/`](styles/): default light, OLED dark, warm paper, high contrast, and compact
 
 ## Requirements
 
@@ -56,10 +55,13 @@ With a stylesheet:
 node convert.js input.md output.pdf --style ./styles/style.css
 ```
 
-With the OLED theme: // BUGGY
+Any theme in [`styles/`](styles/) is selected the same way:
 
 ```bash
 node convert.js input.md output.pdf --style ./styles/oled-style.css
+node convert.js input.md output.pdf --style ./styles/paper-style.css
+node convert.js input.md output.pdf --style ./styles/contrast-style.css
+node convert.js input.md output.pdf --style ./styles/compact-style.css
 ```
 
 Argument parsing is handled by [`parseArgs()`](src/cli/parse-args.js:28).
@@ -155,37 +157,43 @@ The wait logic lives in [`waitForFlag()`](src/core/render-pdf.js:45).
 
 ## Stylesheets
 
-### Default stylesheet
+### Bundled themes
 
-[`styles/style.css`](styles/style.css) is the standard print-oriented theme with:
-- academic-style typography
-- page numbering
-- heading hierarchy
-- tables, code blocks, and blockquotes
+| Theme | File | Character |
+|---|---|---|
+| Default | [`styles/style.css`](styles/style.css) | Academic light. Serif body, indigo headings. |
+| OLED | [`styles/oled-style.css`](styles/oled-style.css) | True-black surface and neon accents, for dark viewing. |
+| Warm paper | [`styles/paper-style.css`](styles/paper-style.css) | Sepia reading surface, rust accent, generous leading for long-form study. |
+| High contrast | [`styles/contrast-style.css`](styles/contrast-style.css) | Black on white (21:1) meeting WCAG AAA, hierarchy carried by weight and rules rather than hue. |
+| Compact | [`styles/compact-style.css`](styles/compact-style.css) | Dense revision layout: smaller type, tighter margins, sections run on instead of breaking. |
 
-### OLED stylesheet
+### Mermaid label colour
 
-[`styles/oled-style.css`](styles/oled-style.css) is a fun alternate theme designed for true-black OLED viewing:
-- black page surfaces
-- neon-accent headings and markers
-- dark-friendly content blocks
-- Mermaid contrast overrides for arrows, lines, labels, and markers
+Mermaid compiles `style X fill:…,color:…` directives in Markdown into **inline `!important`**
+declarations, which outrank any stylesheet rule, including `!important` ones. Left alone this
+makes some diagram labels keep their author colour while others take the theme colour.
 
-// Buggy
+A theme opts in to correcting this by defining `--mermaid-normalize`. The Mermaid bootstrap in
+[`build-html.js`](src/core/build-html.js) then strips the inline text colours after render so the
+theme governs every label evenly. The OLED, warm paper, high contrast, and compact themes opt in;
+the default theme leaves author colours untouched. Author **fill** colours are always preserved.
+
+### Known limitation
+
+Mermaid v11 draws node shapes as `<path>` elements, so the themes outline nodes rather than
+recolour them. Theme node-fill rules that target `rect`/`circle` only are inert.
 
 ## Test Fixtures
 
-The project includes validation files:
+The project includes validation files in [`documents/`](documents/):
 
-- [`test-input.md`](test-input.md) — basic Mermaid smoke test
-- [`test-fixtures.md`](test-fixtures.md) — Mermaid edge-case validation
-- [`test-math.md`](test-math.md) — KaTeX and Mermaid mixed validation
+- [`documents/test-fixtures.md`](documents/test-fixtures.md) — Mermaid edge-case validation
+- [`documents/test-math.md`](documents/test-math.md) — KaTeX and Mermaid mixed validation
 
-Generated sample outputs in the workspace include:
-- [`test-output.pdf`](test-output.pdf)
-- [`test-fixtures.pdf`](test-fixtures.pdf)
-- [`test-math.pdf`](test-math.pdf)
-- [`test-math-oled.pdf`](test-math-oled.pdf)
+Generated sample outputs in [`documents/`](documents/) include:
+- [`documents/test-fixtures.pdf`](documents/test-fixtures.pdf)
+- [`documents/test-math.pdf`](documents/test-math.pdf)
+- [`documents/test-math-oled.pdf`](documents/test-math-oled.pdf)
 
 ## Testing
 
@@ -203,19 +211,19 @@ preprocessing, HTML assembly, input loading, and error handling.
 Standard theme:
 
 ```bash
-node convert.js test-fixtures.md test-fixtures.pdf --style ./styles/style.css
+node convert.js documents/test-fixtures.md documents/test-fixtures.pdf --style ./styles/style.css
 ```
 
 Math + standard theme:
 
 ```bash
-node convert.js test-math.md test-math.pdf --style ./styles/style.css
+node convert.js documents/test-math.md documents/test-math.pdf --style ./styles/style.css
 ```
 
 Math + OLED theme:
 
 ```bash
-node convert.js test-math.md test-math-oled.pdf --style ./styles/oled-style.css
+node convert.js documents/test-math.md documents/test-math-oled.pdf --style ./styles/oled-style.css
 ```
 
 ## File Overview
@@ -227,8 +235,12 @@ node convert.js test-math.md test-math-oled.pdf --style ./styles/oled-style.css
 - [`src/core/build-html.js`](src/core/build-html.js) — HTML assembly and runtime bootstrap injection
 - [`src/core/render-pdf.js`](src/core/render-pdf.js) — Puppeteer PDF rendering
 - [`src/core/errors.js`](src/core/errors.js) — CLI-friendly errors
-- [`styles/style.css`](styles/style.css) — default stylesheet
-- [`styles/oled-style.css`](styles/oled-style.css) — OLED alternate stylesheet
+- [`styles/style.css`](styles/style.css) — default light stylesheet
+- [`styles/oled-style.css`](styles/oled-style.css) — OLED dark stylesheet
+- [`styles/paper-style.css`](styles/paper-style.css) — warm paper stylesheet
+- [`styles/contrast-style.css`](styles/contrast-style.css) — high-contrast stylesheet
+- [`styles/compact-style.css`](styles/compact-style.css) — compact stylesheet
+- [`documents/`](documents/) — source documents, fixtures, and generated PDFs
 
 ## Notes
 

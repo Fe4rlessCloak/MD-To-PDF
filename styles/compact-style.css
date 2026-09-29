@@ -1,0 +1,383 @@
+/* ============================================================
+   Compact Reference Theme
+   A dense, scannable layout for revision and quick lookup.
+   Smaller type, tighter leading, narrow page margins, and
+   sections that run on rather than each starting a new page.
+   ============================================================ */
+
+/* --- TOKENS --- */
+:root {
+    /* Opt in to Mermaid normalisation so labels stay uniform at
+       these smaller sizes (see src/core/build-html.js). */
+    --mermaid-normalize: 1;
+
+    --canvas:    #ffffff;
+    --ink:       #1a1a1a;
+    --ink-soft:  #4a4a4a;
+    --accent:    #0b5d57;
+    --accent-deep: #08423e;
+    --rule:      #cfd8d6;
+    --code-bg:   #f2f4f4;
+    --code-ink:  #08423e;
+    --diagram-line: #5a6b69;
+    --diagram-edge: #a9b7b5;
+}
+
+/* --- PAGE SETUP --- */
+@page {
+    size: A4;
+    margin: 1.4cm 1.5cm;
+    background: #ffffff;
+    @bottom-center {
+        content: "Page " counter(page);
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-size: 8pt;
+        color: #4a4a4a;
+    }
+}
+
+@page :first {
+    margin: 0;
+    @bottom-center {
+        content: none;
+    }
+}
+
+/* --- BODY --- */
+body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.4;
+    color: var(--ink);
+    background: var(--canvas);
+    counter-reset: h2-counter;
+}
+
+/* --- COVER PAGE --- */
+.cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    page: cover;
+    text-align: center;
+    background: #0b2624;
+    color: #eaf3f2;
+    padding: 3cm;
+    box-sizing: border-box;
+}
+
+.cover h1 {
+    font-size: 26pt;
+    font-weight: 700;
+    margin: 0 0 0.4em 0;
+    color: #ffffff;
+    border: none;
+    padding: 0;
+}
+
+.cover .subtitle {
+    font-size: 14pt;
+    font-weight: 400;
+    margin: 0 0 1.2em 0;
+    opacity: 0.9;
+}
+
+.cover .meta {
+    font-size: 10pt;
+    opacity: 0.85;
+    margin-top: 0.8em;
+    line-height: 1.7;
+}
+
+.cover .divider {
+    width: 60px;
+    height: 3px;
+    background: #4db6ac;
+    margin: 1em auto;
+    border: none;
+}
+
+.cover .badge {
+    display: inline-block;
+    background: rgba(77, 182, 172, 0.18);
+    border: 1px solid #4db6ac;
+    border-radius: 3px;
+    padding: 5px 14px;
+    font-size: 9pt;
+    color: #8fd6cf;
+    margin-top: 1em;
+}
+
+/* --- GENERAL TYPOGRAPHY --- */
+/* Compressed steps here are deliberate: hierarchy leans on weight,
+   colour, and rules so the page can be dense without fog. */
+h1, h2, h3, h4 {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color: var(--accent-deep);
+    page-break-after: avoid;
+    text-wrap: balance;
+}
+
+h1 {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #ffffff;
+    background: var(--accent-deep);
+    padding: 7px 12px;
+    border-radius: 2px;
+    margin: 1em 0 0.5em 0;
+    page-break-after: avoid;
+    letter-spacing: 0.2px;
+}
+
+h1:first-of-type {
+    margin-top: 0;
+}
+
+h2 {
+    font-size: 12.5pt;
+    font-weight: 700;
+    color: var(--accent-deep);
+    border-left: 4px solid var(--accent);
+    border-bottom: 1px solid var(--rule);
+    padding: 0 0 2px 8px;
+    margin: 0.9em 0 0.4em 0;
+}
+
+h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0.7em 0 0.25em 0;
+}
+
+h4 {
+    font-size: 10pt;
+    font-weight: 700;
+    color: var(--ink-soft);
+    margin: 0.6em 0 0.2em 0;
+}
+
+p {
+    margin: 0.3em 0;
+    text-align: justify;
+    hyphens: auto;
+}
+
+/* --- LECTURE NUMBER BADGE --- */
+.lecture-badge {
+    display: inline-block;
+    font-size: 8pt;
+    font-weight: 700;
+    color: var(--accent-deep);
+    background: #e0f0ee;
+    border-radius: 2px;
+    padding: 1px 6px;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+
+/* --- EXAM FOCUS / IMPORTANT MARKERS --- */
+.exam-focus {
+    display: inline-block;
+    background: #fff4e0;
+    color: #8a5000;
+    font-weight: 700;
+    font-size: 8pt;
+    padding: 1px 8px;
+    border-radius: 2px;
+    border: 1px solid #d8a13a;
+    margin: 0 2px;
+    white-space: nowrap;
+}
+
+.important-marker {
+    display: inline-block;
+    background: #fdeaea;
+    color: #9b2c1f;
+    font-weight: 700;
+    font-size: 8pt;
+    padding: 1px 6px;
+    border-radius: 2px;
+    border: 1px solid #d08a7c;
+    margin: 0 2px;
+}
+
+/* --- BLOCKQUOTES --- */
+blockquote {
+    margin: 0.5em 0;
+    padding: 5px 12px;
+    border-left: 4px solid var(--accent);
+    background: var(--code-bg);
+    color: var(--ink-soft);
+    font-style: italic;
+    border-radius: 0 2px 2px 0;
+}
+
+blockquote p {
+    margin: 0.15em 0;
+}
+
+/* --- LISTS --- */
+ul, ol {
+    margin: 0.3em 0;
+    padding-left: 1.5em;
+}
+
+li {
+    margin: 0.1em 0;
+}
+
+/* --- TABLES --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 8.5pt;
+    page-break-inside: auto;
+}
+
+table th {
+    background: var(--accent-deep);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 8.5pt;
+    padding: 3px 6px;
+    text-align: left;
+    border: 1px solid var(--accent-deep);
+}
+
+table td {
+    padding: 2px 6px;
+    border: 1px solid var(--rule);
+    vertical-align: top;
+}
+
+table tr:nth-child(even) td {
+    background: #f4f7f7;
+}
+
+table tr {
+    page-break-inside: avoid;
+}
+
+/* --- HORIZONTAL RULES --- */
+hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 0.8em 0;
+}
+
+/* --- STRONG/BOLD --- */
+strong {
+    color: var(--accent-deep);
+    font-weight: 700;
+}
+
+/* --- PDF BOOKMARKS --- */
+h1 {
+    bookmark-level: 1;
+    bookmark-label: attr(data-label) content(text);
+}
+
+h2 {
+    bookmark-level: 2;
+}
+
+h3 {
+    bookmark-level: 3;
+}
+
+/* --- CODE / INLINE MONO --- */
+code {
+    font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 8pt;
+    background: var(--code-bg);
+    padding: 1px 3px;
+    border-radius: 2px;
+    color: var(--code-ink);
+}
+
+pre {
+    background: var(--code-bg);
+    padding: 6px 10px;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+    font-size: 8pt;
+    overflow-x: auto;
+}
+
+/* --- MATH (plain text fallback) --- */
+.math {
+    font-family: Georgia, 'Times New Roman', Times, serif;
+    font-style: italic;
+    color: var(--ink);
+}
+
+/* --- GLOSSARY TABLE (compact) --- */
+.glossary-table {
+    font-size: 8pt;
+}
+
+.glossary-table td:first-child {
+    font-weight: 700;
+    color: var(--accent-deep);
+    white-space: nowrap;
+    width: 28%;
+}
+
+/* --- COVER HIDE ON INNER PAGES --- */
+.content {
+    break-before: page;
+}
+
+/* --- MERMAID (theme-controlled, fills left to the author) --- */
+.mermaid svg {
+    background: transparent !important;
+}
+
+.mermaid svg .node rect,
+.mermaid svg .node circle,
+.mermaid svg .node ellipse,
+.mermaid svg .node polygon,
+.mermaid svg .node path,
+.mermaid svg .actor,
+.mermaid svg .note,
+.mermaid svg .labelBox,
+.mermaid svg .cluster rect {
+    stroke: var(--diagram-edge) !important;
+    stroke-width: 1px;
+}
+
+.mermaid svg .path,
+.mermaid svg line,
+.mermaid svg polyline,
+.mermaid svg .flowchart-link,
+.mermaid svg .messageLine0,
+.mermaid svg .messageLine1,
+.mermaid svg .actor-line,
+.mermaid svg .loopLine {
+    stroke: var(--diagram-line) !important;
+}
+
+.mermaid svg marker path,
+.mermaid svg .marker,
+.mermaid svg .arrowheadPath {
+    fill: var(--diagram-line) !important;
+    stroke: var(--diagram-line) !important;
+}
+
+.mermaid svg text,
+.mermaid svg tspan,
+.mermaid svg .label,
+.mermaid svg .edgeLabel,
+.mermaid svg .nodeLabel,
+.mermaid svg .messageText,
+.mermaid svg .loopText,
+.mermaid svg .noteText {
+    fill: var(--ink) !important;
+    color: var(--ink) !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
