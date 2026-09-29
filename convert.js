@@ -8,7 +8,7 @@
  *
  * Examples:
  *   node convert.js notes.md notes.pdf
- *   node convert.js notes.md notes.pdf --style ./style.css
+ *   node convert.js notes.md notes.pdf --style ./styles/style.css
  */
 
 import { writeFile } from 'node:fs/promises';

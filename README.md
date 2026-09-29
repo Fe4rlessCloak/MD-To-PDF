@@ -19,8 +19,8 @@ The main entrypoint is [`convert.js`](convert.js), which reads Markdown, builds 
 - Block LaTeX support with [`$$...$$`](src/core/render-markdown.js:7)
 - Dynamic Mermaid scaling using [`.mermaid`](src/core/build-html.js:29) and [`.mermaid svg`](src/core/build-html.js:39)
 - Wait logic for both Mermaid and KaTeX rendering in [`renderPdf()`](src/core/render-pdf.js:73)
-- Standard light stylesheet in [`style.css`](style.css)
-- Alternate dark OLED stylesheet in [`oled-style.css`](oled-style.css) // BUGGY WITH SVGs
+- Standard light stylesheet in [`styles/style.css`](styles/style.css)
+- Alternate dark OLED stylesheet in [`styles/oled-style.css`](styles/oled-style.css) // BUGGY WITH SVGs
 
 ## Requirements
 
@@ -53,13 +53,13 @@ node convert.js input.md output.pdf
 With a stylesheet:
 
 ```bash
-node convert.js input.md output.pdf --style ./style.css
+node convert.js input.md output.pdf --style ./styles/style.css
 ```
 
 With the OLED theme: // BUGGY
 
 ```bash
-node convert.js input.md output.pdf --style ./oled-style.css
+node convert.js input.md output.pdf --style ./styles/oled-style.css
 ```
 
 Argument parsing is handled by [`parseArgs()`](src/cli/parse-args.js:28).
@@ -157,7 +157,7 @@ The wait logic lives in [`waitForFlag()`](src/core/render-pdf.js:45).
 
 ### Default stylesheet
 
-[`style.css`](style.css) is the standard print-oriented theme with:
+[`styles/style.css`](styles/style.css) is the standard print-oriented theme with:
 - academic-style typography
 - page numbering
 - heading hierarchy
@@ -165,7 +165,7 @@ The wait logic lives in [`waitForFlag()`](src/core/render-pdf.js:45).
 
 ### OLED stylesheet
 
-[`oled-style.css`](oled-style.css) is a fun alternate theme designed for true-black OLED viewing:
+[`styles/oled-style.css`](styles/oled-style.css) is a fun alternate theme designed for true-black OLED viewing:
 - black page surfaces
 - neon-accent headings and markers
 - dark-friendly content blocks
@@ -203,19 +203,19 @@ preprocessing, HTML assembly, input loading, and error handling.
 Standard theme:
 
 ```bash
-node convert.js test-fixtures.md test-fixtures.pdf --style ./style.css
+node convert.js test-fixtures.md test-fixtures.pdf --style ./styles/style.css
 ```
 
 Math + standard theme:
 
 ```bash
-node convert.js test-math.md test-math.pdf --style ./style.css
+node convert.js test-math.md test-math.pdf --style ./styles/style.css
 ```
 
 Math + OLED theme:
 
 ```bash
-node convert.js test-math.md test-math-oled.pdf --style ./oled-style.css
+node convert.js test-math.md test-math-oled.pdf --style ./styles/oled-style.css
 ```
 
 ## File Overview
@@ -227,8 +227,8 @@ node convert.js test-math.md test-math-oled.pdf --style ./oled-style.css
 - [`src/core/build-html.js`](src/core/build-html.js) — HTML assembly and runtime bootstrap injection
 - [`src/core/render-pdf.js`](src/core/render-pdf.js) — Puppeteer PDF rendering
 - [`src/core/errors.js`](src/core/errors.js) — CLI-friendly errors
-- [`style.css`](style.css) — default stylesheet
-- [`oled-style.css`](oled-style.css) — OLED alternate stylesheet
+- [`styles/style.css`](styles/style.css) — default stylesheet
+- [`styles/oled-style.css`](styles/oled-style.css) — OLED alternate stylesheet
 
 ## Notes
 
