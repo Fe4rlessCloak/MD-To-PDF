@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Convert Markdown files with Mermaid.js diagrams into beautifully scaled PDFs",
   "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch"
+  },
   "bin": {
     "md-to-pdf": "./convert.js"
   },

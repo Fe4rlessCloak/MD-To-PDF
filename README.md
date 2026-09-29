@@ -187,6 +187,17 @@ Generated sample outputs in the workspace include:
 - [`test-math.pdf`](test-math.pdf)
 - [`test-math-oled.pdf`](test-math-oled.pdf)
 
+## Testing
+
+Unit tests use Node's built-in test runner — no extra dependencies:
+
+```bash
+npm test
+```
+
+Test files live in [`test/`](test/) and cover argument parsing, Markdown/Mermaid/math
+preprocessing, HTML assembly, input loading, and error handling.
+
 ## Example Commands
 
 Standard theme:
