@@ -1,0 +1,27 @@
+{
+  "name": "md-to-pdf",
+  "version": "1.0.0",
+  "description": "Convert Markdown files with Mermaid.js diagrams into beautifully scaled PDFs",
+  "type": "module",
+  "bin": {
+    "md-to-pdf": "./convert.js"
+  },
+  "exports": {
+    ".": "./convert.js",
+    "./src/cli/parse-args": "./src/cli/parse-args.js",
+    "./src/core/load-input": "./src/core/load-input.js",
+    "./src/core/render-markdown": "./src/core/render-markdown.js",
+    "./src/core/build-html": "./src/core/build-html.js",
+    "./src/core/render-pdf": "./src/core/render-pdf.js",
+    "./src/core/errors": "./src/core/errors.js"
+  },
+  "dependencies": {
+    "katex": "^0.16.11",
+    "marked": "^15.0.0",
+    "puppeteer": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

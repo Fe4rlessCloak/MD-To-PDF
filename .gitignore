@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# macOS
+.DS_Store
+
+# Local agent/tooling state
+.commandcode/
+
+# Generated PDF output
+*.pdf
