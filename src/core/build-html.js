@@ -150,6 +150,17 @@ const KATEX_BOOTSTRAP = `
 <script type="module">
 import katex from 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.mjs';
 
+// Wait for Mermaid to finish before mutating the DOM. Rendering KaTeX
+// concurrently with Mermaid makes Mermaid's async render fail on later
+// diagrams ("Cannot read properties of null (reading 'getAttribute')").
+await new Promise((resolve) => {
+  if (window.__MERMAID_RENDER_DONE__) return resolve();
+  const timer = setInterval(() => {
+    if (window.__MERMAID_RENDER_DONE__) { clearInterval(timer); resolve(); }
+  }, 50);
+  setTimeout(() => { clearInterval(timer); resolve(); }, 25000);
+});
+
 // Render display math blocks
 document.querySelectorAll('.math-display').forEach((el) => {
   try {

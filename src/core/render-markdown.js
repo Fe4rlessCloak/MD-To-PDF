@@ -65,6 +65,14 @@ function preprocessMath(markdown) {
   /** @type {string[]} */
   const protectedBlocks = [];
 
+  // Escape characters that would otherwise be parsed as HTML inside the
+  // <div>/<span> wrappers. KaTeX reads the content back via textContent,
+  // which decodes these entities, so the LaTeX is recovered intact.
+  // Without this, "<" in expressions such as "a<c^k" opens a bogus tag
+  // and corrupts the surrounding document.
+  const escapeMath = (s) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
   // 1. Protect fenced code blocks (including mermaid).
   let processed = markdown.replace(
     /(```[\s\S]*?```)/g,
@@ -86,15 +94,17 @@ function preprocessMath(markdown) {
   // 3. Block math: $$...$$  (non-greedy, multiline).
   processed = processed.replace(
     /\$\$([\s\S]*?)\$\$/g,
-    (_, inner) => `<div class="math-display">\n${inner.trim()}\n</div>`,
+    (_, inner) => `<div class="math-display">\n${escapeMath(inner.trim())}\n</div>`,
   );
 
   // 4. Inline math: $...$
-  //    Conservative: requires non-space after opening $ and before closing $,
-  //    and must not be preceded by a backslash or another $.
+  //    Conservative: requires non-space after the opening $ and before the
+  //    closing $, must not be preceded by a backslash or another $, and may
+  //    not span lines. Single-character math such as $n$ must be matched,
+  //    so a "one or more characters" body is used rather than "two or more".
   processed = processed.replace(
-    /(?<!\$|\\)\$(\S[^$]*?\S)\$(?!\$)/g,
-    (_, inner) => `<span class="math-inline">${inner}</span>`,
+    /(?<!\$|\\)\$(?!\s)([^\n$]*?[^\s$])\$(?!\$)/g,
+    (_, inner) => `<span class="math-inline">${escapeMath(inner)}</span>`,
   );
 
   // 5. Restore protected blocks.
