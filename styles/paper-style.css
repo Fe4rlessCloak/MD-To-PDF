@@ -41,7 +41,7 @@
     }
 }
 
-@page :first {
+@page cover {
     margin: 0;
     @bottom-center {
         content: none;
