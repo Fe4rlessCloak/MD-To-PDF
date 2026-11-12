@@ -19,6 +19,9 @@ body {
   margin: 0;
   padding: 0;
 }
+@page {
+  margin: 2cm 2.2cm;
+}
 `;
 
 /**
@@ -92,51 +95,66 @@ mermaid.initialize({
   },
 });
 
-// Wait for DOM, then render all .mermaid blocks
-await mermaid.run({
-  querySelector: '.mermaid',
-});
+// Render each diagram independently so one broken diagram cannot take
+// down the whole document. Failures become a visible error placeholder
+// and are reported in window.__MERMAID_ERRORS__ for the PDF step.
+window.__MERMAID_ERRORS__ = [];
+try {
+  const nodes = document.querySelectorAll('.mermaid');
+  for (const [index, node] of nodes.entries()) {
+    try {
+      const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
+      node.innerHTML = svg;
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      window.__MERMAID_ERRORS__.push({ index, error: message });
+      node.textContent = 'Mermaid diagram failed to render: ' + message;
+    }
+  }
 
-// Optionally strip Mermaid's inline text-colour overrides so the active
-// theme's stylesheet governs label text. Mermaid compiles style
-// directives (color) into inline !important declarations, which outrank
-// any stylesheet rule (even !important ones). Author fill colours are
-// left intact. Themes opt in by defining --mermaid-normalize (see
-// styles/oled-style.css).
-const normalize = getComputedStyle(document.documentElement)
-  .getPropertyValue('--mermaid-normalize')
-  .trim();
-if (normalize) {
-  document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
-    el.style.removeProperty('color');
+  // Optionally strip Mermaid's inline text-colour overrides so the active
+  // theme's stylesheet governs label text. Mermaid compiles style
+  // directives (color) into inline !important declarations, which outrank
+  // any stylesheet rule (even !important ones). Author fill colours are
+  // left intact. Themes opt in by defining --mermaid-normalize (see
+  // styles/oled-style.css).
+  const normalize = getComputedStyle(document.documentElement)
+    .getPropertyValue('--mermaid-normalize')
+    .trim();
+  if (normalize) {
+    document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
+      el.style.removeProperty('color');
+    });
+  }
+
+  // Emit basic render diagnostics for print-layout debugging.
+  window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
+    const svg = node.querySelector('svg');
+    const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
+    const nodeRect = node.getBoundingClientRect();
+    const svgRect = svg ? svg.getBoundingClientRect() : null;
+
+    return {
+      index,
+      foreignObjects,
+      container: {
+        width: nodeRect.width,
+        height: nodeRect.height,
+      },
+      svg: svgRect
+        ? {
+            width: svgRect.width,
+            height: svgRect.height,
+          }
+        : null,
+    };
   });
+} catch (err) {
+  window.__MERMAID_ERRORS__.push({ index: -1, error: String(err) });
+} finally {
+  // Signal that rendering is complete so Puppeteer knows to export
+  window.__MERMAID_RENDER_DONE__ = true;
 }
-
-// Emit basic render diagnostics for print-layout debugging.
-window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
-  const svg = node.querySelector('svg');
-  const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
-  const nodeRect = node.getBoundingClientRect();
-  const svgRect = svg ? svg.getBoundingClientRect() : null;
-
-  return {
-    index,
-    foreignObjects,
-    container: {
-      width: nodeRect.width,
-      height: nodeRect.height,
-    },
-    svg: svgRect
-      ? {
-          width: svgRect.width,
-          height: svgRect.height,
-        }
-      : null,
-  };
-});
-
-// Signal that rendering is complete so Puppeteer knows to export
-window.__MERMAID_RENDER_DONE__ = true;
 </script>
 `;
 

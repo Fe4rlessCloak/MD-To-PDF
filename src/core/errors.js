@@ -33,6 +33,6 @@ export class RenderError extends CliError {
  * @param {CliError} err
  */
 export function fatal(err) {
-  process.stderr.write(`\n  ✘ ${err.message}\n\n`);
-  process.exit(err.exitCode);
+  process.stderr.write(`\n  ✘ ${err?.message ?? String(err)}\n\n`);
+  process.exit(err?.exitCode ?? 1);
 }

@@ -88,3 +88,16 @@ test('bootstrap strips inline Mermaid text colours when a theme opts in', async 
   const light = await readTheme('style.css');
   assert.ok(!light.includes('--mermaid-normalize'));
 });
+
+test('base CSS provides an @page margin fallback before user CSS', () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: USER_CSS });
+  assert.match(html, /@page\s*\{[^}]*margin:/);
+  assert.ok(html.indexOf('@page') < html.indexOf(USER_CSS));
+});
+
+test('mermaid bootstrap renders diagrams per-node and always signals done', () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  assert.ok(html.includes('mermaid.render('));
+  assert.ok(html.includes('__MERMAID_ERRORS__'));
+  assert.ok(html.includes('finally'));
+});

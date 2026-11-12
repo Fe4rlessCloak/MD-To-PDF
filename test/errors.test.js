@@ -55,3 +55,28 @@ test('fatal() writes the message and exits with the error code', () => {
   assert.equal(exitCode, 2);
   assert.match(String(written), /kaboom/);
 });
+
+test('fatal() exits with code 1 for non-CliError failures', () => {
+  const originalExit = process.exit;
+  const originalWrite = process.stderr.write;
+  let exitCode;
+  let written = '';
+
+  process.exit = (code) => {
+    exitCode = code;
+  };
+  process.stderr.write = (chunk) => {
+    written += chunk;
+    return true;
+  };
+
+  try {
+    fatal(new Error('boom'));
+  } finally {
+    process.exit = originalExit;
+    process.stderr.write = originalWrite;
+  }
+
+  assert.equal(exitCode, 1);
+  assert.match(String(written), /boom/);
+});

@@ -90,6 +90,17 @@ export async function renderPdf(html, options = {}) {
       );
     }
 
+    // Surface per-diagram failures without failing the whole document.
+    const mermaidErrors = await page.evaluate(() => window.__MERMAID_ERRORS__ || []);
+    if (mermaidErrors.length > 0) {
+      process.stderr.write(
+        `[renderPdf()] Warning: ${mermaidErrors.length} Mermaid diagram(s) failed to render:\n`
+      );
+      for (const entry of mermaidErrors) {
+        process.stderr.write(`  - diagram ${entry.index}: ${entry.error}\n`);
+      }
+    }
+
     // Wait for KaTeX to finish rendering.
     const mathDone = await waitForFlag(page, '__MATH_RENDER_DONE__', 'KaTeX');
     if (!mathDone) {
