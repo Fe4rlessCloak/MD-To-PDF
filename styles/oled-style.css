@@ -340,19 +340,9 @@ pre {
 
 /* --- FORCE DARK PAGE SURFACES / REMOVE STRAY LIGHT OUTLINES --- */
 p,
-div,
 section,
 article,
 main,
-table,
-thead,
-tbody,
-tr,
-td,
-th,
-blockquote,
-pre,
-code,
 ul,
 ol,
 li,
@@ -391,23 +381,10 @@ h1,
 .mermaid svg .node circle,
 .mermaid svg .node ellipse,
 .mermaid svg .node polygon,
+.mermaid svg .node path,
 .mermaid svg .node .label-container {
     fill: #f0f2ff !important;
     stroke: #c0c4e0 !important;
-}
-
-/* Node labels: dark text on light fill */
-.mermaid svg .node text,
-.mermaid svg .node tspan,
-.mermaid svg .node .label,
-.mermaid svg .node .nodeLabel,
-.mermaid svg .actor text,
-.mermaid svg .note text,
-.mermaid svg .note .noteText,
-.mermaid svg .labelBox text,
-.mermaid svg .cluster .cluster-label text {
-    fill: #111 !important;
-    color: #111 !important;
 }
 
 .mermaid svg .path,
@@ -431,26 +408,58 @@ h1,
     stroke: #f5f7ff !important;
 }
 
+/* Canvas text (sequence messages, loop labels, edge labels, titles): light ink on #000 */
 .mermaid svg text,
 .mermaid svg tspan,
 .mermaid svg .label,
 .mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
+.mermaid svg .edgeLabel text,
+.mermaid svg .edgeLabel tspan,
+.mermaid svg .edgeLabel .label,
 .mermaid svg .messageText,
 .mermaid svg .loopText,
-.mermaid svg .noteText {
+.mermaid svg .labelText,
+.mermaid svg .sequenceNumber {
+    fill: #f0f2ff !important;
+    color: #f0f2ff !important;
+}
+
+.mermaid svg .edgeLabel rect,
+.mermaid svg .edgeLabel .background,
+.mermaid svg .labelBkg {
+    fill: #000000 !important;
+    background: #000000 !important;
+    stroke: none !important;
+}
+
+/* Labels inside light-filled shapes: dark text on #f0f2ff */
+.mermaid svg .node text,
+.mermaid svg .node tspan,
+.mermaid svg .node .label,
+.mermaid svg .node .nodeLabel,
+.mermaid svg .actor text,
+.mermaid svg .actor tspan,
+.mermaid svg .note text,
+.mermaid svg .note tspan,
+.mermaid svg .note .noteText,
+.mermaid svg .labelBox text,
+.mermaid svg .labelBox tspan,
+.mermaid svg .cluster .cluster-label text,
+.mermaid svg .cluster .cluster-label tspan {
     fill: #111 !important;
     color: #111 !important;
 }
 
 .mermaid svg .label foreignObject,
-.mermaid svg .edgeLabel foreignObject,
-.mermaid svg .nodeLabel foreignObject,
-.mermaid svg .labelBkg {
-    background: #f0f2ff !important;
+.mermaid svg .nodeLabel foreignObject {
+    background: transparent !important;
 }
 
-.mermaid svg rect,
+.mermaid svg .edgeLabel foreignObject {
+    background: #000000 !important;
+}
+
+.mermaid svg rect:not(.background),
 .mermaid svg circle,
 .mermaid svg ellipse,
 .mermaid svg polygon.label-container,
@@ -459,4 +468,9 @@ h1,
 .mermaid svg .labelBox,
 .mermaid svg .cluster rect {
     stroke: #c0c4e0 !important;
+}
+
+.mermaid svg .node .label > rect {
+    fill: transparent !important;
+    stroke: none !important;
 }

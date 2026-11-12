@@ -53,3 +53,21 @@ test('ignores extra trailing positional arguments', () => {
     style: null,
   });
 });
+
+test('parses --style before positional args and --style=path syntax', () => {
+  assert.deepEqual(parseArgs(['--style', 'theme.css', 'in.md', 'out.pdf']), {
+    input: 'in.md',
+    output: 'out.pdf',
+    style: 'theme.css',
+  });
+  assert.deepEqual(parseArgs(['in.md', 'out.pdf', '--style=theme.css']), {
+    input: 'in.md',
+    output: 'out.pdf',
+    style: 'theme.css',
+  });
+});
+
+test('throws InputError when --style value is empty or another flag', () => {
+  assert.throws(() => parseArgs(['in.md', 'out.pdf', '--style=']), InputError);
+  assert.throws(() => parseArgs(['in.md', 'out.pdf', '--style', '--verbose']), InputError);
+});

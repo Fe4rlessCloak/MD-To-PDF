@@ -3,211 +3,191 @@
  * into <div class="mermaid"> containers for client-side rendering,
  * and converting LaTeX math expressions into identifiable wrappers.
  *
- * Inline math:  $...$
+ * Inline math:  $...$  (and mid-line $$...$$)
  * Block math:   $$...$$   (must start and end on its own line)
  *
- * Math parsing is conservative to avoid false positives in currency
- * or punctuation.  Fenced code blocks are protected from math
- * substitution; math that ends up inside code or HTML tags (inline
- * code spans, indented code, link URLs) is restored to its literal
- * source instead of being converted.
+ * Mermaid and math are implemented as native `marked` extensions so
+ * CommonMark code fences, indented code blocks, inline code spans,
+ * link destinations, blockquotes, lists, and HTML blocks/comments are
+ * respected without regex pre-pass desynchronisation.
  */
 
-import { marked } from 'marked';
+import { Marked } from 'marked';
+
+/**
+ * Escape HTML-significant characters for math wrappers.
+ * KaTeX reads the content back via `textContent`, which decodes these
+ * entities intact while preventing `<` from opening bogus HTML tags.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeMath(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Minimal HTML-entity escape for Mermaid containers.
+ * Escaping `&` and `<` prevents tags such as `</div>` from breaking
+ * the container while preserving `-->` arrows for readability.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeMermaid(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;');
+}
 
 // ---------------------------------------------------------------------------
 // Mermaid extension
 // ---------------------------------------------------------------------------
 
 /**
- * Custom extension that captures ```mermaid … ``` (and ~~~mermaid … ~~~)
+ * Custom block extension that captures ```mermaid … ``` (and ~~~mermaid … ~~~)
  * fenced blocks and emits them as <div class="mermaid">…</div> instead of
- * <pre><code>.  The closing fence may omit its trailing newline (EOF), and
- * may be longer than the opening fence.  Language matching is
- * case-insensitive.  The source is HTML-escaped; Mermaid reads it back via
- * textContent, so a label containing "</div>" cannot break the container.
+ * <pre><code>.  Supports 0–3 spaces of indentation on both opening and closing
+ * fences, 3+ fence characters, empty blocks, closing fences at EOF without a
+ * trailing newline, and case-insensitive language matching.  Closing fences must
+ * use the same fence character and be at least as long as the opening fence.
  */
 const mermaidExtension = {
   name: 'mermaid',
   level: 'block',
-  start(src) { return src.match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*\n/i)?.index; },
+  start(src) {
+    return src.match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*(?:\n|$)/im)?.index;
+  },
   tokenizer(src) {
-    const match = src.match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*\n([\s\S]*?)\n\1[`~]*[ \t]*(?:\n|$)/i);
-    if (match) {
-      return {
-        type: 'mermaid',
-        raw: match[0],
-        text: match[2].trim(),
-      };
-    }
-    return undefined;
+    const open = src.match(/^ {0,3}(`{3,}|~{3,})[ \t]*mermaid[ \t]*\n/i);
+    if (!open) return undefined;
+
+    const fence = open[1];
+    const rest = src.slice(open[0].length);
+    const closeRe = new RegExp(
+      `^ {0,3}${fence[0]}{${fence.length},}[ \\t]*(?:\\n|$)`,
+      'm',
+    );
+    const close = rest.match(closeRe);
+    if (!close) return undefined;
+
+    const body = rest.slice(0, close.index).trim();
+    const raw = open[0] + rest.slice(0, close.index + close[0].length);
+    return {
+      type: 'mermaid',
+      raw,
+      text: body,
+    };
   },
   renderer(token) {
-    return `<div class="mermaid">\n${escapeHtml(token.text)}\n</div>\n`;
+    return `<div class="mermaid">\n${escapeMermaid(token.text)}\n</div>\n`;
   },
 };
 
-marked.use({ extensions: [mermaidExtension] });
-
 // ---------------------------------------------------------------------------
-// Math pre-processing
+// Math extensions
 // ---------------------------------------------------------------------------
 
 /**
- * Escape characters that would otherwise be parsed as HTML inside the
- * math wrappers. KaTeX reads the content back via textContent, which
- * decodes these entities, so the LaTeX is recovered intact. Without
- * this, "<" in expressions such as "a<c^k" opens a bogus tag and
- * corrupts the surrounding document.
- *
- * @param {string} s
- * @returns {string}
+ * Block math extension:
+ *  1. Multi-line `$$` opening on its own line and `$$` closing on its own line
+ *     (0–3 spaces indent allowed on each fence line).
+ *  2. Single-line standalone `$$...$$` occupying its own line with no other
+ *     unprotected `$$` delimiters on that line.
  */
-function escapeMath(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * Minimal HTML-entity escape for mermaid sources and titles.
- *
- * @param {string} str
- * @returns {string}
- */
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;');
-}
-
-/**
- * Replace fenced code blocks (``` and ~~~, three or more fence chars,
- * unterminated fences through EOF) with opaque placeholders so math
- * extraction can never touch their contents.
- *
- * @param {string} markdown
- * @returns {{ text: string, blocks: string[] }}
- */
-function protectCode(markdown) {
-  /** @type {string[]} */
-  const blocks = [];
-  const text = markdown.replace(
-    /(?<=^|\n)(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n\1[`~]*[^\S\n]*(?:\n|$)|(?![\s\S]))/g,
-    (match) => {
-      blocks.push(match);
-      return `\x00CODEX${blocks.length - 1}\x00`;
-    },
-  );
-  return { text, blocks };
-}
-
-/**
- * Restore fenced code blocks verbatim. Must run BEFORE marked.parse so
- * the restored fences are parsed as code (restoring them afterwards
- * would inject raw fence markup into the HTML output).
- *
- * @param {string} text
- * @param {string[]} blocks
- * @returns {string}
- */
-function restoreCode(text, blocks) {
-  return text.replace(/\x00CODEX(\d+)\x00/g, (match, idx) => blocks[Number(idx)] ?? '');
-}
-
-/**
- * Replace LaTeX math expressions with placeholder tokens. The tokens
- * survive marked.parse untouched, and are turned into HTML afterwards
- * (see restoreMath) so marked can never re-parse the math contents —
- * otherwise "$x*y*z$" would gain <em> tags and lose its asterisks.
- *
- * Block math ($$…$$ occupying its own lines) and inline math ($…$)
- * are stored as { kind, html, originalSource } per token.
- *
- * @param {string} text
- * @returns {{ text: string, tokens: Array<{ kind: string, html: string, originalSource: string }> }}
- */
-function extractMath(text) {
-  /** @type {Array<{ kind: string, html: string, originalSource: string }>} */
-  const tokens = [];
-
-  const addToken = (match, body, kind) => {
-    const html = kind === 'block'
-      ? `<div class="math-display">\n${escapeMath(body.trim())}\n</div>`
-      : `<span class="math-inline">${escapeMath(body)}</span>`;
-    const index = tokens.push({ kind, html, originalSource: match }) - 1;
-    return `\u27E8MATHX${index}\u27E9`;
-  };
-
-  // 1. Block math: $$...$$ must open and close on its own line (at most
-  //    three spaces of indent). The placeholder is surrounded by blank
-  //    lines so it forms its own paragraph.
-  text = text.replace(
-    /^[ \t]{0,3}\$\$[ \t]*\n?([\s\S]*?)\n?[ \t]*\$\$[ \t]*$/gm,
-    (match, body) => `\n\n${addToken(match, body, 'block')}\n\n`,
-  );
-
-  // 2. Mid-line $$...$$ degrades to inline math rather than injecting a
-  //    <div> into the middle of a paragraph.
-  text = text.replace(
-    /(?<!\$|\\)\$\$(?!\s)([^\n$]*?[^\s$])\$\$(?!\$)/g,
-    (match, body) => addToken(match, body, 'inline'),
-  );
-
-  // 3. Inline math: $...$
-  //    Conservative: requires non-space after the opening $ and before the
-  //    closing $, must not be preceded by a backslash or another $, and may
-  //    not span lines. Single-character math such as $n$ must be matched,
-  //    so a "one or more characters" body is used rather than "two or more".
-  text = text.replace(
-    /(?<!\$|\\)\$(?!\s)([^\n$]*?[^\s$])\$(?!\$)/g,
-    (match, body) => addToken(match, body, 'inline'),
-  );
-
-  return { text, tokens };
-}
-
-/** Matches a math token in both raw and percent-encoded form (marked's
- *  cleanUrl runs encodeURI over link destinations). The ⟨⟩ wrapper (U+27E8/9)
- *  is used rather than control characters so tokens survive link-destination
- *  parsing untouched. */
-const MATH_TOKEN_RE = /\u27E8MATHX(\d+)\u27E9|%E2%9F%A8MATHX(\d+)%E2%9F%A9/g;
-
-/**
- * Turn math placeholders into HTML after marked.parse.
- *
- * - A block token alone in a paragraph is unwrapped out of the <p>
- *   (a <div> inside a <p> splits the paragraph).
- * - A token inside an HTML tag (link URL, attribute) reverts to its
- *   literal $...$ source so the markup stays valid.
- * - A token inside <pre>/<code> reverts to its literal source so code
- *   blocks and code spans keep showing the original text.
- *
- * @param {string} html
- * @param {Array<{ kind: string, html: string, originalSource: string }>} tokens
- * @returns {string}
- */
-function restoreMath(html, tokens) {
-  const source = (idx) => tokens[Number(idx)]?.originalSource ?? '';
-  const rendered = (idx) => tokens[Number(idx)]?.html ?? '';
-
-  // Block tokens standing alone in a paragraph become block-level divs.
-  let out = html.replace(
-    /<p>\s*(?:\u27E8MATHX(\d+)\u27E9|%E2%9F%A8MATHX(\d+)%E2%9F%A9)\s*<\/p>/g,
-    (match, a, b) => (tokens[Number(a ?? b)]?.kind === 'block' ? rendered(a ?? b) : match),
-  );
-
-  let inCode = 0;
-  out = out.replace(/(<[^>]*>)|(\u27E8MATHX(\d+)\u27E9|%E2%9F%A8MATHX(\d+)%E2%9F%A9)/g,
-    (match, tag, _tok, a, b) => {
-      if (tag) {
-        if (/^<(pre|code)\b/i.test(tag)) inCode += 1;
-        else if (/^<\/(pre|code)>/i.test(tag)) inCode = Math.max(0, inCode - 1);
-        return tag.replace(MATH_TOKEN_RE, (m, x, y) => source(x ?? y));
+const blockMathExtension = {
+  name: 'blockMath',
+  level: 'block',
+  start(src) {
+    return src.match(/^ {0,3}\$\$/m)?.index;
+  },
+  tokenizer(src) {
+    // 1. Multi-line $$...$$ with opening and closing $$ on their own lines.
+    const open = src.match(/^ {0,3}\$\$[ \t]*\n/);
+    if (open) {
+      const rest = src.slice(open[0].length);
+      const close = rest.match(/^ {0,3}\$\$[ \t]*(?:\n|$)/m);
+      if (close) {
+        const body = rest.slice(0, close.index).trim();
+        const raw = open[0] + rest.slice(0, close.index + close[0].length);
+        return {
+          type: 'blockMath',
+          raw,
+          text: body,
+        };
       }
-      return inCode > 0 ? source(a ?? b) : rendered(a ?? b);
-    });
+    }
 
-  return out;
-}
+    // 2. Single-line standalone $$...$$ on its own line.
+    const single = src.match(
+      /^ {0,3}\$\$(?!\s)((?:\\\\|\\\$|[^\n$])*?(?:\\\\|\\\$|[^\s$\\]))\$\$[ \t]*(?:\n|$)/,
+    );
+    if (single) {
+      return {
+        type: 'blockMath',
+        raw: single[0],
+        text: single[1].trim(),
+      };
+    }
+
+    return undefined;
+  },
+  renderer(token) {
+    return `<div class="math-display">\n${escapeMath(token.text)}\n</div>\n`;
+  },
+};
+
+/**
+ * Inline math extension:
+ *  - Mid-line `$$...$$` (degrades to inline span rather than injecting a <div>)
+ *  - Conservative `$...$`: requires non-space after opening `$` and before
+ *    closing `$`, allows escaped `\$` and `\\` inside the body, may not span
+ *    lines, and rejects a digit immediately following the closing `$` to avoid
+ *    false positives on currency ranges like `$5-$10`.
+ */
+const inlineMathExtension = {
+  name: 'inlineMath',
+  level: 'inline',
+  start(src) {
+    return src.indexOf('$');
+  },
+  tokenizer(src) {
+    const dbl = src.match(
+      /^\$\$(?!\s)((?:\\\\|\\\$|[^\n$])*?(?:\\\\|\\\$|[^\s$\\]))\$\$(?!\$|\d)/,
+    );
+    if (dbl) {
+      return {
+        type: 'inlineMath',
+        raw: dbl[0],
+        text: dbl[1],
+      };
+    }
+
+    const sgl = src.match(
+      /^\$(?!\$|\s)((?:\\\\|\\\$|[^\n$])*?(?:\\\\|\\\$|[^\s$\\]))\$(?!\$|\d)/,
+    );
+    if (sgl) {
+      return {
+        type: 'inlineMath',
+        raw: sgl[0],
+        text: sgl[1],
+      };
+    }
+
+    return undefined;
+  },
+  renderer(token) {
+    return `<span class="math-inline">${escapeMath(token.text)}</span>`;
+  },
+};
+
+const mdParser = new Marked();
+mdParser.use({
+  extensions: [mermaidExtension, blockMathExtension, inlineMathExtension],
+});
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -222,9 +202,5 @@ function restoreMath(html, tokens) {
  * @returns {Promise<string>}
  */
 export async function renderMarkdown(markdown) {
-  const { text: protectedMd, blocks } = protectCode(markdown);
-  const { text: withMath, tokens } = extractMath(protectedMd);
-  const restoredMd = restoreCode(withMath, blocks);
-  const html = marked.parse(restoredMd);
-  return restoreMath(html, tokens);
+  return mdParser.parse(markdown);
 }

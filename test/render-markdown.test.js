@@ -118,3 +118,68 @@ test('escapes mermaid source so labels cannot break the container', async () => 
   assert.ok(html.includes('&lt;/div>'));
   assert.ok(!html.includes('A["</div>"]'));
 });
+
+test('escapes HTML inside code and link URLs containing dollar signs', async () => {
+  const inline = await renderMarkdown('Use `$a<b$` and `$c>d$` in code.');
+  assert.ok(inline.includes('<code>$a&lt;b$</code>'));
+  assert.ok(inline.includes('<code>$c&gt;d$</code>'));
+
+  const indented = await renderMarkdown('    $<img src=x onerror=alert(1)>$\n');
+  assert.ok(indented.includes('&lt;img src=x'));
+  assert.ok(!indented.includes('<img '));
+
+  const link = await renderMarkdown('[link](http://a.com/$a"b$)');
+  assert.ok(!link.includes('href="http://a.com/$a"'));
+  assert.ok(link.includes('href="http://a.com/$a%22b$"'));
+});
+
+test('does not swallow prose between lines starting and ending with $$', async () => {
+  const doc = await renderMarkdown('$$a$$ is first.\n\nProse **here**.\n\n$$b$$');
+  assert.ok(doc.includes('<span class="math-inline">a</span>'));
+  assert.ok(doc.includes('<strong>here</strong>'));
+  assert.ok(doc.includes('<div class="math-display">\nb\n</div>'));
+
+  const sameLine = await renderMarkdown('$$a$$ and $$b$$');
+  assert.ok(!sameLine.includes('<div class="math-display">'));
+  assert.ok(sameLine.includes('<span class="math-inline">a</span> and <span class="math-inline">b</span>'));
+});
+
+test('triple-backtick inline code spans and adjacent code spans do not corrupt math', async () => {
+  const triple = await renderMarkdown('```$x$``` is inline code\n\nReal math: $y = 1$.\n');
+  assert.ok(triple.includes('<code>$x$</code>'));
+  assert.ok(triple.includes('<span class="math-inline">y = 1</span>'));
+
+  const adjacent = await renderMarkdown('Price `$5` and `$10`');
+  assert.ok(adjacent.includes('<code>$5</code> and <code>$10</code>'));
+});
+
+test('handles indented, empty, and non-mixed mermaid fences cleanly', async () => {
+  const indented = await renderMarkdown('  ```mermaid\nA[$x$] --> B\n  ```\n');
+  assert.ok(indented.includes('<div class="mermaid">'));
+  assert.ok(!indented.includes('math-inline'));
+  assert.ok(indented.includes('A[$x$] --> B'));
+
+  const empty = await renderMarkdown('```mermaid\n```\n');
+  assert.ok(empty.includes('<div class="mermaid">'));
+
+  const mixed = await renderMarkdown('```mermaid\nA-->B\n~~~\n');
+  assert.ok(!mixed.includes('<div class="mermaid">'));
+});
+
+test('handles self-closing code tags, escaped dollars, currency ranges, CRLF, and nested blocks', async () => {
+  const selfClose = await renderMarkdown('<code/> hello $x$');
+  assert.ok(selfClose.includes('<span class="math-inline">x</span>'));
+
+  const escInside = await renderMarkdown('$\\text{price } \\$5$');
+  assert.ok(escInside.includes('<span class="math-inline">\\text{price } \\$5</span>'));
+
+  const range = await renderMarkdown('Cost is $5-$10.');
+  assert.ok(!range.includes('math-inline'));
+
+  const crlf = await renderMarkdown('Intro\r\n\r\n$$\r\nE = mc^2\r\n$$\r\n');
+  assert.ok(crlf.includes('<div class="math-display">\nE = mc^2\n</div>'));
+
+  const listBlock = await renderMarkdown('- Item 1\n\n  $$\n  E=mc^2\n  $$\n\n- Item 2\n');
+  assert.equal((listBlock.match(/<ul>/g) || []).length, 1);
+  assert.ok(listBlock.includes('<div class="math-display">\nE=mc^2\n</div>'));
+});

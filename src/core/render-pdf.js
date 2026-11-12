@@ -79,8 +79,9 @@ export async function renderPdf(html, options = {}) {
     browser = await puppeteer.launch(launchOpts);
     const page = await browser.newPage();
 
-    // Set content and wait for network to settle (CDN assets load).
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // Set content and wait for initial document load; Mermaid and KaTeX
+    // readiness are awaited explicitly via their completion flags below.
+    await page.setContent(html, { waitUntil: 'load' });
 
     // Wait for Mermaid to finish rendering.
     const mermaidDone = await waitForFlag(page, '__MERMAID_RENDER_DONE__', 'Mermaid');
@@ -90,8 +91,14 @@ export async function renderPdf(html, options = {}) {
       );
     }
 
-    // Surface per-diagram failures without failing the whole document.
+    // Fail fast on Mermaid bootstrap/CDN failure; warn on per-diagram syntax errors.
     const mermaidErrors = await page.evaluate(() => window.__MERMAID_ERRORS__ || []);
+    const mermaidFatal = mermaidErrors.find((e) => e.index === -1);
+    if (mermaidFatal) {
+      throw new RenderError(
+        `Failed to load Mermaid runtime: ${mermaidFatal.error}`
+      );
+    }
     if (mermaidErrors.length > 0) {
       process.stderr.write(
         `[renderPdf()] Warning: ${mermaidErrors.length} Mermaid diagram(s) failed to render:\n`
@@ -109,8 +116,27 @@ export async function renderPdf(html, options = {}) {
       );
     }
 
-    const mermaidDebug = await page.evaluate(() => window.__MERMAID_DEBUG__ || []);
-    process.stdout.write(`[renderPdf()] Mermaid debug: ${JSON.stringify(mermaidDebug)}\n`);
+    // Fail fast on KaTeX bootstrap/CDN failure; warn on per-expression errors.
+    const mathErrors = await page.evaluate(() => window.__MATH_ERRORS__ || []);
+    const mathFatal = mathErrors.find((e) => e.index === -1);
+    if (mathFatal) {
+      throw new RenderError(
+        `Failed to load KaTeX runtime: ${mathFatal.error}`
+      );
+    }
+    if (mathErrors.length > 0) {
+      process.stderr.write(
+        `[renderPdf()] Warning: ${mathErrors.length} math expression(s) failed to render:\n`
+      );
+      for (const entry of mathErrors) {
+        process.stderr.write(`  - ${entry.kind} ${entry.index}: ${entry.error}\n`);
+      }
+    }
+
+    if (process.env.MD_TO_PDF_DEBUG) {
+      const mermaidDebug = await page.evaluate(() => window.__MERMAID_DEBUG__ || []);
+      process.stderr.write(`[renderPdf()] Mermaid debug: ${JSON.stringify(mermaidDebug)}\n`);
+    }
 
     // Generate the PDF.
     const pdfBuffer = await page.pdf(pdfOpts);

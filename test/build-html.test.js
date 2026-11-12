@@ -101,3 +101,26 @@ test('mermaid bootstrap renders diagrams per-node and always signals done', () =
   assert.ok(html.includes('__MERMAID_ERRORS__'));
   assert.ok(html.includes('finally'));
 });
+
+test('skips CDN module imports at runtime when no diagrams or math are present and avoids 25s race', () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  assert.ok(html.includes('if (nodes.length > 0)'));
+  assert.ok(html.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
+  assert.ok(html.includes('window.__MERMAID_READY__'));
+  assert.ok(!html.includes('25000'));
+  assert.ok(html.includes('__MATH_ERRORS__'));
+  assert.ok(html.includes('el.textContent = raw'));
+});
+
+test('neutralizes closing style tags inside userCss', () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: '/* </style><script>alert(1)</script> */' });
+  assert.ok(!html.includes('</style><script>'));
+});
+
+test('oled stylesheet preserves element backgrounds and uses light ink on canvas Mermaid labels', async () => {
+  const oled = await readFile(new URL('../styles/oled-style.css', import.meta.url), 'utf-8');
+  assert.ok(!oled.match(/^div,\s*$/m));
+  assert.ok(oled.includes('.mermaid svg .messageText'));
+  assert.ok(oled.includes('fill: #f0f2ff !important'));
+  assert.ok(oled.includes('.mermaid svg .node path'));
+});

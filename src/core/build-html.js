@@ -77,128 +77,166 @@ const KATEX_CSS = `
  */
 const MERMAID_BOOTSTRAP = `
 <script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'base',
-  securityLevel: 'loose',
-  flowchart: {
-    htmlLabels: false,
-  },
-  sequence: {
-    useMaxWidth: true,
-    htmlLabels: false,
-  },
-  gantt: {
-    useMaxWidth: true,
-  },
+let resolveMermaidReady;
+window.__MERMAID_READY__ = new Promise((resolve) => {
+  resolveMermaidReady = resolve;
 });
-
-// Render each diagram independently so one broken diagram cannot take
-// down the whole document. Failures become a visible error placeholder
-// and are reported in window.__MERMAID_ERRORS__ for the PDF step.
 window.__MERMAID_ERRORS__ = [];
+window.__MERMAID_DEBUG__ = [];
+
+function isDarkColor(color) {
+  const m = color && color.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
+  if (!m) return false;
+  const luminance = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
+  return luminance < 128;
+}
+
 try {
   const nodes = document.querySelectorAll('.mermaid');
-  for (const [index, node] of nodes.entries()) {
-    try {
-      const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
-      node.innerHTML = svg;
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err);
-      window.__MERMAID_ERRORS__.push({ index, error: message });
-      node.textContent = 'Mermaid diagram failed to render: ' + message;
-    }
-  }
+  if (nodes.length > 0) {
+    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
 
-  // Optionally strip Mermaid's inline text-colour overrides so the active
-  // theme's stylesheet governs label text. Mermaid compiles style
-  // directives (color) into inline !important declarations, which outrank
-  // any stylesheet rule (even !important ones). Author fill colours are
-  // left intact. Themes opt in by defining --mermaid-normalize (see
-  // styles/oled-style.css).
-  const normalize = getComputedStyle(document.documentElement)
-    .getPropertyValue('--mermaid-normalize')
-    .trim();
-  if (normalize) {
-    document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
-      el.style.removeProperty('color');
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      securityLevel: 'loose',
+      suppressErrorRendering: true,
+      flowchart: {
+        htmlLabels: false,
+      },
+      sequence: {
+        useMaxWidth: true,
+        htmlLabels: false,
+      },
+      gantt: {
+        useMaxWidth: true,
+      },
+    });
+
+    // Render each diagram independently so one broken diagram cannot take
+    // down the whole document. Failures become a visible error placeholder
+    // and are reported in window.__MERMAID_ERRORS__ for the PDF step.
+    for (const [index, node] of nodes.entries()) {
+      try {
+        const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
+        node.innerHTML = svg;
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        window.__MERMAID_ERRORS__.push({ index, error: message });
+        document.getElementById('dmermaid-' + index)?.remove();
+        node.textContent = 'Mermaid diagram failed to render: ' + message;
+      }
+    }
+
+    // Optionally strip Mermaid's inline text-colour overrides so the active
+    // theme's stylesheet governs label text. Mermaid compiles style
+    // directives (color) into inline !important declarations, which outrank
+    // any stylesheet rule (even !important ones). Author fill colours are
+    // left intact, and dark author fills receive light text for contrast.
+    const normalize = getComputedStyle(document.documentElement)
+      .getPropertyValue('--mermaid-normalize')
+      .trim();
+    if (normalize) {
+      document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
+        el.style.removeProperty('color');
+      });
+      document.querySelectorAll('.mermaid svg .node').forEach((node) => {
+        const shape = node.querySelector('.label-container, rect, circle, ellipse, polygon, path');
+        if (shape && isDarkColor(getComputedStyle(shape).fill)) {
+          node.querySelectorAll('text, tspan, .label, .nodeLabel').forEach((label) => {
+            label.style.setProperty('fill', '#ffffff', 'important');
+            label.style.setProperty('color', '#ffffff', 'important');
+          });
+        }
+      });
+    }
+
+    // Emit basic render diagnostics for print-layout debugging.
+    window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
+      const svg = node.querySelector('svg');
+      const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
+      const nodeRect = node.getBoundingClientRect();
+      const svgRect = svg ? svg.getBoundingClientRect() : null;
+
+      return {
+        index,
+        foreignObjects,
+        container: {
+          width: nodeRect.width,
+          height: nodeRect.height,
+        },
+        svg: svgRect
+          ? {
+              width: svgRect.width,
+              height: svgRect.height,
+            }
+          : null,
+      };
     });
   }
-
-  // Emit basic render diagnostics for print-layout debugging.
-  window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
-    const svg = node.querySelector('svg');
-    const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
-    const nodeRect = node.getBoundingClientRect();
-    const svgRect = svg ? svg.getBoundingClientRect() : null;
-
-    return {
-      index,
-      foreignObjects,
-      container: {
-        width: nodeRect.width,
-        height: nodeRect.height,
-      },
-      svg: svgRect
-        ? {
-            width: svgRect.width,
-            height: svgRect.height,
-          }
-        : null,
-    };
-  });
 } catch (err) {
-  window.__MERMAID_ERRORS__.push({ index: -1, error: String(err) });
+  const message = err && err.message ? err.message : String(err);
+  window.__MERMAID_ERRORS__.push({ index: -1, error: message });
 } finally {
-  // Signal that rendering is complete so Puppeteer knows to export
+  // Signal that rendering is complete so KaTeX and Puppeteer can proceed.
   window.__MERMAID_RENDER_DONE__ = true;
+  resolveMermaidReady();
 }
 </script>
 `;
 
 /**
  * KaTeX client-side bootstrap script.
- * Loads KaTeX from CDN and renders all .math-display and .math-inline
- * elements.  Sets a completion flag so Puppeteer can wait for math
- * before exporting the PDF.
+ * Loads KaTeX from CDN only when math nodes are present and renders all
+ * .math-display and .math-inline elements after Mermaid completes.
  */
 const KATEX_BOOTSTRAP = `
 <script type="module">
-import katex from 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.mjs';
-
-// Wait for Mermaid to finish before mutating the DOM. Rendering KaTeX
-// concurrently with Mermaid makes Mermaid's async render fail on later
-// diagrams ("Cannot read properties of null (reading 'getAttribute')").
-await new Promise((resolve) => {
-  if (window.__MERMAID_RENDER_DONE__) return resolve();
-  const timer = setInterval(() => {
-    if (window.__MERMAID_RENDER_DONE__) { clearInterval(timer); resolve(); }
-  }, 50);
-  setTimeout(() => { clearInterval(timer); resolve(); }, 25000);
-});
-
-// Render display math blocks
-document.querySelectorAll('.math-display').forEach((el) => {
-  try {
-    katex.render(el.textContent, el, { displayMode: true, throwOnError: false });
-  } catch (_) {
-    // Leave the raw LaTeX visible if rendering fails.
+window.__MATH_ERRORS__ = [];
+try {
+  // Wait deterministically for Mermaid to finish before mutating the DOM.
+  if (window.__MERMAID_READY__) {
+    await window.__MERMAID_READY__;
   }
-});
 
-// Render inline math spans
-document.querySelectorAll('.math-inline').forEach((el) => {
-  try {
-    katex.render(el.textContent, el, { displayMode: false, throwOnError: false });
-  } catch (_) {
-    // Leave the raw LaTeX visible if rendering fails.
+  const displayNodes = document.querySelectorAll('.math-display');
+  const inlineNodes = document.querySelectorAll('.math-inline');
+
+  if (displayNodes.length > 0 || inlineNodes.length > 0) {
+    const { default: katex } = await import('https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.mjs');
+
+    let idx = 0;
+    for (const el of displayNodes) {
+      const raw = el.textContent;
+      try {
+        katex.render(raw, el, { displayMode: true, throwOnError: true });
+      } catch (err) {
+        el.textContent = raw;
+        const message = err && err.message ? err.message : String(err);
+        window.__MATH_ERRORS__.push({ index: idx, kind: 'display', error: message });
+      }
+      idx++;
+    }
+
+    for (const el of inlineNodes) {
+      const raw = el.textContent;
+      try {
+        katex.render(raw, el, { displayMode: false, throwOnError: true });
+      } catch (err) {
+        el.textContent = raw;
+        const message = err && err.message ? err.message : String(err);
+        window.__MATH_ERRORS__.push({ index: idx, kind: 'inline', error: message });
+      }
+      idx++;
+    }
   }
-});
-
-// Signal that math rendering is complete
-window.__MATH_RENDER_DONE__ = true;
+} catch (err) {
+  const message = err && err.message ? err.message : String(err);
+  window.__MATH_ERRORS__.push({ index: -1, kind: 'bootstrap', error: message });
+} finally {
+  // Signal that math rendering is complete.
+  window.__MATH_RENDER_DONE__ = true;
+}
 </script>
 `;
 
@@ -222,7 +260,7 @@ export function buildHtml({ bodyHtml, userCss, title }) {
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">';
 
   const styleTag = stylesheets
-    .map((css) => `<style>\n${css.trim()}\n</style>`)
+    .map((css) => `<style>\n${css.trim().replace(/<\/style/gi, '<\\/style')}\n</style>`)
     .join('\n');
 
   return `<!DOCTYPE html>
