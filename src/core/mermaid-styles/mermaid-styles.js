@@ -141,18 +141,30 @@ export function optionalVariableNames() {
 }
 
 /**
+ * Remove CSS comments.
+ *
+ * Used by every check below that must read declarations rather than prose: the
+ * block's own header mentions selectors, and a theme's comment explaining what
+ * it no longer does must not read as a declaration.
+ *
+ * @param {string} css
+ * @returns {string}
+ */
+function stripComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
  * Selectors a stylesheet declares, with any `@container`/`@media` wrapper
  * stripped and grouping split apart.
  *
- * Comment text is removed first: the block's own header comment mentions
- * selectors, and a theme's comment explaining what it no longer does must not
- * read as a declaration.
+ * Comment text is removed first, for the reason given on {@link stripComments}.
  *
  * @param {string} css
  * @returns {Array<string>} Trimmed selector strings, in source order.
  */
 export function selectorList(css) {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const withoutComments = stripComments(css);
   const selectors = [];
 
   // Every `{` starts a block; the text before it is a selector or an at-rule
@@ -185,7 +197,7 @@ export function selectorList(css) {
  * @returns {Set<string>} Names declared with no value.
  */
 function emptyDeclarations(css) {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const withoutComments = stripComments(css);
   const empty = new Set();
   const pattern = /(--mermaid-[\w-]+)\s*:\s*(?:;|$)/gm;
   let match;
@@ -207,7 +219,7 @@ function emptyDeclarations(css) {
  * @returns {Array<string>} Missing variable names, in contract order.
  */
 export function missingVariables(css) {
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const withoutComments = stripComments(css);
   const declared = new Set();
   const pattern = /(--mermaid-[\w-]+)\s*:/g;
   let match;
@@ -220,18 +232,49 @@ export function missingVariables(css) {
 }
 
 /**
+ * Canonical form of one selector, for comparison.
+ *
+ * Comparison has to survive formatting drift, not just whitespace *inside* a
+ * compound selector: a theme that restates a block rule as
+ * `.mermaid svg .node .label>rect` is redeclaring the same rule the block
+ * writes as `.mermaid svg .node .label > rect`, and a naive string compare
+ * calls that clean. Collapsing whitespace and putting one space either side of
+ * a combinator makes the two identical without changing what they select.
+ *
+ * @param {string} selector
+ * @returns {string}
+ */
+export function canonicalSelector(selector) {
+  return selector
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([>+~])\s*/g, ' $1 ')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .trim();
+}
+
+/**
  * Selectors from the shared block that a theme redeclares.
  *
- * Exact selector matching, because that is what "redeclares the block's
- * selector" means: a theme may still use `.mermaid` for containment-adjacent
- * concerns of its own, but it may not restate a rule the block owns. The
- * comparison normalises whitespace only.
+ * A theme may still use `.mermaid` for containment-adjacent concerns of its
+ * own, but it may not restate a rule the block owns. Both sides are split on
+ * commas, trimmed and put through {@link canonicalSelector}, so a selector
+ * list written in a different order, or with different spacing around a
+ * combinator, is still recognised as the block's own.
  *
  * @param {string} css  A theme's CSS text.
  * @param {Array<string>} [shared]  The block's selectors; defaults to the file.
  * @returns {Array<string>} Redeclared selectors, deduplicated, in block order.
  */
 export function redeclaredSelectors(css, shared = selectorList(mermaidStylesheetSource())) {
-  const declared = new Set(selectorList(css).map((selector) => selector.replace(/\s+/g, ' ')));
-  return [...new Set(shared)].filter((selector) => declared.has(selector.replace(/\s+/g, ' ')));
+  const declared = new Set(selectorList(css).map(canonicalSelector));
+
+  const seen = new Set();
+  const redeclared = [];
+  for (const selector of shared.map(canonicalSelector)) {
+    if (!seen.has(selector) && declared.has(selector)) redeclared.push(selector);
+    seen.add(selector);
+  }
+  return redeclared;
 }

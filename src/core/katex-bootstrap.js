@@ -24,10 +24,15 @@
 /**
  * The KaTeX release the document targets.
  *
- * Written once, here, and consumed by both URL builders below. The `katex`
- * entry in `package.json` is kept as the declared pin for the same version so
- * that the dependency audit and the CDN URL stay in step; nothing imports the
- * npm package at runtime, because the browser loads this version from the CDN.
+ * Written once, here, and consumed by both URL builders below. Nothing imports
+ * a KaTeX npm package: the browser loads both the runtime and the stylesheet
+ * from the CDN, so `package.json` declares no `katex` dependency at all.
+ *
+ * The dependency was removed rather than merely unused. `package.json` had
+ * pinned a version whose lockfile resolution had drifted to a release the CDN
+ * never served, so the declared pin and the URL could disagree while both
+ * looked authoritative. The version now has exactly one owner — this constant —
+ * and the URLs are derived from it.
  *
  * @type {string}
  */
@@ -83,7 +88,7 @@ function messageOf(err) {
  * @param {Object} params
  * @param {boolean} params.displayMode  True for block math.
  * @param {number}  params.index        Position in the whole expression sequence.
- * @returns {{index: number, kind: string, error: string}|null} A report on
+ * @returns {import('./readiness-protocol.js').ReadinessReport|null} A report on
  *   failure, or `null` when the expression typeset.
  */
 export function renderExpression(katex, el, { displayMode, index }) {

@@ -13,19 +13,26 @@
  *   rule from a geometry value. Assembly emits it last, after every print
  *   layer, so the module's rule is the one that decides the page.
  *
- * The document stays a single self-contained file: the only fetches it makes at
- * runtime are the two CDN imports inside the bootstraps, and neither happens
- * unless the document actually contains a diagram or an expression.
+ * The document is a single HTML file, but not a self-contained one: it makes
+ * three fetches at runtime. Two are the CDN imports inside the bootstraps,
+ * and each is guarded by a node-count check, so a document with no diagrams
+ * and no expressions fetches neither. The third is the KaTeX stylesheet
+ * `<link>` in the head, which is emitted for every document because the glyph
+ * fonts it references are needed the moment any math appears; it is not
+ * gated, so a math-free document still requests it.
  */
 
 import { readFileSync } from 'node:fs';
 import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
-import { stylesheetPayload } from './print-styles/print-styles.js';
+import {
+  BASE_STYLESHEET_NAME,
+  stylesheetPayload,
+} from './print-styles/print-styles.js';
 import {
   MERMAID_STYLESHEET_NAME,
   mermaidStylesheetSource,
 } from './mermaid-styles/mermaid-styles.js';
-import { pageGeometry, DEFAULT_PAGE_GEOMETRY } from './page-geometry.js';
+import { pageGeometry, PAGE_GEOMETRY_STYLESHEET_NAME } from './page-geometry.js';
 import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
 /**
@@ -102,31 +109,44 @@ export function neutralizeClosingTag(source, tagName) {
 }
 
 /**
- * The Mermaid bootstrap `<script>` element.
+ * One bootstrap `<script>` element, for either browser program.
  *
- * This is the production adapter over `mermaid-bootstrap.js`: the module's
- * source text is inlined, then its entry point is called with the protocol and
- * the fatal sentinel. Top-level await is what makes the inlined program's
- * asynchronous work — the runtime load, then every diagram — complete before
- * the enclosing module script does, exactly as when the program was written
- * inline in a template literal.
+ * This is the production adapter over a bootstrap module: the module's source
+ * text is inlined, then its entry point is called with the protocol and the
+ * fatal sentinel. Top-level await is what makes the inlined program's
+ * asynchronous work complete before the enclosing module script does, exactly
+ * as when each program was written inline in its own template literal.
  *
- * `RF` and the fatal index are passed in rather than read from a global, so
- * the program never depends on the spelling of a flag.
+ * `RF` and the fatal index are passed in rather than read from a global, so a
+ * program never depends on the spelling of a flag.
  *
+ * @param {Object} params
+ * @param {string} params.entry    Entry-point function name, e.g. `runMermaidBootstrap`.
+ * @param {string} params.source   The program's ESM source text.
  * @returns {string} A complete `<script type="module">` element.
  */
-function mermaidBootstrapScript() {
-  const program = neutralizeClosingTag(mermaidBootstrapSource(), 'script');
+function bootstrapScript({ entry, source }) {
+  const program = neutralizeClosingTag(source, 'script');
 
   return `
 <script type="module">
 ${READINESS_SOURCE}
 ${program}
 
-await runMermaidBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
+await ${entry}({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 </script>
 `;
+}
+
+/**
+ * The Mermaid bootstrap `<script>` element.
+ * @returns {string} A complete `<script type="module">` element.
+ */
+function mermaidBootstrapScript() {
+  return bootstrapScript({
+    entry: 'runMermaidBootstrap',
+    source: mermaidBootstrapSource(),
+  });
 }
 
 /**
@@ -140,35 +160,28 @@ await runMermaidBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} }
  * @returns {string} A complete `<script type="module">` element.
  */
 function katexBootstrapScript() {
-  const program = neutralizeClosingTag(katexBootstrapSource(), 'script');
-
-  return `
-<script type="module">
-${READINESS_SOURCE}
-${program}
-
-await runKatexBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
-</script>
-`;
+  return bootstrapScript({
+    entry: 'runKatexBootstrap',
+    source: katexBootstrapSource(),
+  });
 }
 
 /**
  * Build a complete HTML document string.
  *
- * The document options are consumed whole, so an option added to
- * `document-options.js` reaches assembly without a change here or at the
- * call site.
+ * The options object is consumed whole, which means the call site does not
+ * change when an option is added. Assembly is a different matter: it reads the
+ * options it emits, so a new option that reaches the document needs a line
+ * here. `title` is the current example — it is read below and nowhere else.
  *
  * @param {Object} params
  * @param {string}  params.bodyHtml     Rendered Markdown HTML.
  * @param {string|null} params.userCss  Optional user-provided CSS text.
  * @param {import('./document-options.js').DocumentOptions} [params.options]
  *   Document options; supplies the title.
- * @param {Partial<import('./page-geometry.js').PageGeometry>} [params.page]
- *   Page geometry overrides. Defaults to {@link DEFAULT_PAGE_GEOMETRY}.
  * @returns {string}
  */
-export function buildHtml({ bodyHtml, userCss, options = {}, page = DEFAULT_PAGE_GEOMETRY }) {
+export function buildHtml({ bodyHtml, userCss, options = {} }) {
   const title = options.title ?? null;
 
   // The shared Mermaid block is its own layer, spliced in directly after the
@@ -183,7 +196,7 @@ export function buildHtml({ bodyHtml, userCss, options = {}, page = DEFAULT_PAGE
   const layers = [];
   for (const layer of stylesheetPayload({ userCss })) {
     layers.push(layer);
-    if (layer.name === 'base') {
+    if (layer.name === BASE_STYLESHEET_NAME) {
       layers.push({ name: MERMAID_STYLESHEET_NAME, css: mermaidStylesheetSource() });
     }
   }
@@ -191,7 +204,7 @@ export function buildHtml({ bodyHtml, userCss, options = {}, page = DEFAULT_PAGE
   // Page geometry is appended after every print layer. It carries no other
   // rules, so the contract above is unaffected, and emitting it last means the
   // module's `@page` cannot be overridden by a stale copy in a theme.
-  layers.push({ name: 'page-geometry', css: pageGeometry(page).css });
+  layers.push({ name: PAGE_GEOMETRY_STYLESHEET_NAME, css: pageGeometry().css });
 
   const styleTag = layers
     .map((layer) => `<style>\n${neutralizeClosingTag(layer.css.trim(), 'style')}\n</style>`)

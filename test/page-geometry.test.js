@@ -13,7 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 import {
   DEFAULT_PAGE_GEOMETRY,
@@ -21,13 +21,19 @@ import {
   pageGeometry,
 } from '../src/core/page-geometry.js';
 
-const THEMES = [
-  'style.css',
-  'compact-style.css',
-  'contrast-style.css',
-  'paper-style.css',
-  'oled-style.css',
-];
+/**
+ * Every bundled theme, discovered from `styles/` rather than listed.
+ *
+ * A literal list would leave a sixth stylesheet unguarded, and the guarantees
+ * below — no page rule of its own, geometry supplied as variables — are
+ * exactly what a new theme must inherit. The directory is the source of truth.
+ *
+ * @returns {Promise<string[]>} Theme file names, sorted for stable messages.
+ */
+async function bundledThemes() {
+  const entries = await readdir(new URL('../styles/', import.meta.url));
+  return entries.filter((name) => name.endsWith('.css')).sort();
+}
 
 /**
  * Read one bundled theme, with CSS comments removed.
@@ -165,7 +171,7 @@ test('correcting a page margin is one edit, because the rule exists once', () =>
 });
 
 test('no bundled theme declares a page rule of its own', async () => {
-  for (const name of THEMES) {
+  for (const name of await bundledThemes()) {
     const css = await readTheme(name);
     assert.ok(!css.includes('@page'), `${name} must not declare @page; the module owns it`);
     assert.ok(!/@bottom-center/.test(css), `${name} must not declare a margin box of its own`);
@@ -173,7 +179,7 @@ test('no bundled theme declares a page rule of its own', async () => {
 });
 
 test('every bundled theme supplies geometry as variables', async () => {
-  for (const name of THEMES) {
+  for (const name of await bundledThemes()) {
     const css = await readTheme(name);
     assert.match(
       css,
@@ -184,9 +190,67 @@ test('every bundled theme supplies geometry as variables', async () => {
 });
 
 test('no bundled theme styles a cover element nothing can emit', async () => {
-  for (const name of THEMES) {
+  for (const name of await bundledThemes()) {
     const css = await readTheme(name);
     assert.ok(!/\.cover\b/.test(css), `${name} must not carry .cover rules`);
+  }
+});
+
+test('no bundled theme styles a content wrapper nothing can emit', async () => {
+  // The `.content` rules were the other half of the cover pair: cover first,
+  // then a forced page break before the body. Nothing in `src/` or `documents/`
+  // emits either class, and the cover capability that survives is the opt-in
+  // `@page cover` rule in `page-geometry.js`, which needs no element rules.
+  for (const name of await bundledThemes()) {
+    const css = await readTheme(name);
+    assert.ok(!/\.content\b/.test(css), `${name} must not carry .content rules`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Discovery: the directory is the source of truth
+// ---------------------------------------------------------------------------
+
+test('the theme list is discovered from the directory, so a new theme is covered', async () => {
+  const themes = await bundledThemes();
+
+  // A literal list would let a sixth theme ship unguarded. Assert discovery
+  // actually found the bundled themes, not an empty directory.
+  assert.ok(themes.length >= 5, `expected the bundled themes, found: ${themes.join(', ')}`);
+  assert.ok(themes.includes('style.css'), 'the default theme must be discovered');
+  assert.ok(themes.every((name) => name.endsWith('.css')), 'only stylesheets are themes');
+});
+
+// ---------------------------------------------------------------------------
+// The footer values this theme declared as its own @page margin box
+// ---------------------------------------------------------------------------
+
+test('compact keeps the small, soft footer its old page rule carried', async () => {
+  // Regression: when theme @page rules were folded into page-geometry.js, this
+  // theme's margin box was dropped and the footer fell back to the 9pt/#888888
+  // defaults. Compact's page number is deliberately smaller and darker-neutral
+  // so it stays quiet on a dense page. Measured against the page rule, not a
+  // theme-local rule: the module owns the rule.
+  const compact = await readTheme('compact-style.css');
+
+  assert.match(compact, /--page-footer-font-size:\s*8pt;/, 'compact footer is 8pt, not the 9pt default');
+  assert.match(compact, /--page-footer-color:\s*#4a4a4a;/, 'compact footer ink is #4a4a4a');
+  assert.match(compact, /--page-background:\s*#ffffff;/, 'compact prints on a white sheet');
+});
+
+test('every footer variable a theme sets is one the page rule reads', async () => {
+  // The cross-file contract: a theme supplies a variable, the module reads it.
+  // A theme setting a name the module never reads would be silently ignored —
+  // the same fault class as the compact regression, one step earlier.
+  const read = Object.values(PAGE_GEOMETRY_VARIABLES);
+  const css = pageGeometry().css;
+
+  for (const name of await bundledThemes()) {
+    const theme = await readTheme(name);
+    for (const match of theme.matchAll(/(--page-[\w-]+)\s*:/g)) {
+      assert.ok(read.includes(match[1]), `${name} sets ${match[1]}, which the page rule never reads`);
+      assert.ok(css.includes(`var(${match[1]}`), `${name} sets ${match[1]}, which pageGeometry() does not emit`);
+    }
   }
 });
 
@@ -196,7 +260,7 @@ test('the page rule is declared in exactly one place across the whole repo', asy
   // fault, whether it is a theme, a print stylesheet, or documentation that
   // grows a second copy.
   const sources = [
-    ...THEMES.map((name) => `../styles/${name}`),
+    ...(await bundledThemes()).map((name) => `../styles/${name}`),
     '../src/core/print-styles/base.css',
     '../src/core/print-styles/mermaid-containment.css',
     '../src/core/print-styles/math.css',

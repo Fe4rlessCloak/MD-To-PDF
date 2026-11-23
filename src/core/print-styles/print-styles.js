@@ -12,9 +12,15 @@
  *
  * - {@link printStylesheetSource} reads one stylesheet from disk. This is the
  *   read adapter; tests use it to assert against the real file.
- * - {@link stylesheetPayload} returns the layers assembly must emit, in order.
- *   That order is an acceptance criterion of its own, so it is a value a test
- *   can inspect instead of the accidental order of three `push` calls.
+ * - {@link stylesheetPayload} returns the layers this module owns, in their
+ *   order relative to each other. That order is an acceptance criterion of its
+ *   own, so it is a value a test can inspect instead of the accidental order of
+ *   three `push` calls.
+ *
+ * The returned order is not the document's emission order. Assembly inserts
+ * its own layers around these: the shared Mermaid block after `base`, and the
+ * `@page` geometry last, after every print layer. What this module guarantees
+ * is the relative order of `base`, `user`, `mermaid-containment` and `math`.
  *
  * Assembly keeps no CSS text of its own after this: it inlines what this module
  * hands it and nothing else.
@@ -33,6 +39,12 @@ import { readFileSync } from 'node:fs';
  * @type {ReadonlyArray<string>}
  */
 export const PRINT_STYLESHEET_NAMES = Object.freeze(['base', 'mermaid-containment', 'math']);
+
+/**
+ * Name of the first layer, the one assembly splices the Mermaid block after.
+ * @type {string}
+ */
+export const BASE_STYLESHEET_NAME = PRINT_STYLESHEET_NAMES[0];
 
 /** Name under which user-supplied CSS is emitted. @type {string} */
 export const USER_STYLESHEET_NAME = 'user';

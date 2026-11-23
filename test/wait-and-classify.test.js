@@ -129,9 +129,17 @@ test('an empty or missing report set classifies cleanly', () => {
   }
 });
 
-test('a report line names its kind when it has one and the diagram otherwise', () => {
-  assert.equal(describeReport({ index: 2, error: 'boom' }), 'diagram 2: boom');
+test('a report line names its kind when it has one and the caller’s noun otherwise', () => {
+  assert.equal(describeReport({ index: 2, error: 'boom' }, 'diagram'), 'diagram 2: boom');
   assert.equal(describeReport({ index: 2, kind: 'display', error: 'boom' }), 'display 2: boom');
+});
+
+test('the fallback noun is a parameter, because two bootstraps share this module', () => {
+  // Baked-in 'diagram' put Mermaid's word in KaTeX's warnings. Each consumer
+  // now names its own noun, and the shared module has no opinion.
+  assert.equal(describeReport({ index: 1, error: 'boom' }, 'expression'), 'expression 1: boom');
+  assert.equal(describeReport({ index: 1, error: 'boom' }), 'report 1: boom');
+  assert.equal(describeReport({ index: 1, kind: 'bootstrap', error: 'x' }), 'bootstrap 1: x');
 });
 
 test('a fatal report raises a RenderError naming the runtime', () => {
@@ -150,12 +158,12 @@ test('warnings are reported through the injected sink and do not throw', () => {
 
   checkErrorReports(
     [{ index: 1, error: 'bad diagram' }, { index: 4, kind: 'inline', error: 'bad math' }],
-    { runtime: 'KaTeX', noun: 'math expression', sink },
+    { runtime: 'KaTeX', noun: 'math expression', reportKind: 'expression', sink },
   );
 
   assert.deepEqual(sink.lines, [
     '[renderPdf()] Warning: 2 math expression(s) failed to render:',
-    '  - diagram 1: bad diagram',
+    '  - expression 1: bad diagram',
     '  - inline 4: bad math',
   ]);
 });
@@ -166,6 +174,40 @@ test('checking a clean report set writes nothing', () => {
   checkErrorReports([], { runtime: 'Mermaid', noun: 'Mermaid diagram', sink });
 
   assert.deepEqual(sink.lines, []);
+});
+
+test('checking reports returns nothing, because its caller used neither half', () => {
+  // The return was destructured by nobody. Throwing or writing the lines is the
+  // entire outcome, and a caller that wants the classification asks
+  // classifyErrorReports directly.
+  assert.equal(checkErrorReports([], { runtime: 'Mermaid', noun: 'Mermaid', sink: sinkOf() }), undefined);
+  assert.equal(
+    checkErrorReports([{ index: 0, error: 'x' }], { runtime: 'Mermaid', noun: 'Mermaid', sink: sinkOf() }),
+    undefined,
+  );
+});
+
+test('the renderer is one adapter over the protocol seam, and says so', async () => {
+  // Glossary: an adapter is a concrete thing satisfying an interface at a seam;
+  // the seam is the location, not the closure. The file prose used to call both
+  // the module and a `readFlag` closure "the seam".
+  const source = await readFile(new URL('../src/core/render-pdf.js', import.meta.url), 'utf8');
+
+  assert.ok(
+    /one adapter over the readiness protocol's seam/.test(source),
+    'the module must describe itself as an adapter, not the seam',
+  );
+  assert.ok(
+    !/is the browser adapter for the readiness protocol/i.test(source),
+    'the module is not the whole browser adapter for the protocol',
+  );
+  assert.ok(
+    !/The readiness seam:/.test(source),
+    'a closure is an adapter over the seam, not the seam itself',
+  );
+  // The report reader is not a second name for the flag reader.
+  assert.ok(!source.includes('readReports'), 'a report array is read through the same accessor');
+  assert.match(source, /readFlagValue/);
 });
 
 test('the renderer owns neither a polling loop nor a fatal-index comparison', async () => {

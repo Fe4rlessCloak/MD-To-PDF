@@ -180,6 +180,52 @@ test('assembly emits exactly one page rule', () => {
   assert.equal((html.match(/@page\s*\{/g) ?? []).length, 1);
 });
 
+test('the two bootstrap scripts share one template, so they cannot drift apart', () => {
+  // Both programs are inlined by the same ten-line adapter with the entry-point
+  // name as the only difference. Assert the shape, not the code: each call site
+  // appears exactly once, wired to the protocol and the fatal sentinel.
+  const html = withOptions();
+
+  for (const entry of ['runMermaidBootstrap', 'runKatexBootstrap']) {
+    assert.equal(
+      (html.match(new RegExp(`await ${entry}\\(\\{ flags: RF, fatalReportIndex: -1 \\}\\);`, 'g')) ?? []).length,
+      1,
+      `${entry} must be called exactly once, with the protocol and fatal sentinel`,
+    );
+  }
+  // The protocol declaration is inlined into each module script, once per
+  // bootstrap, because each is a module with its own bindings.
+  assert.equal(
+    (html.match(/const RF = Object\.freeze\(/g) ?? []).length,
+    2,
+    'each inlined program carries its own copy of the protocol',
+  );
+});
+
+test('layer names come from the modules that own them, not string literals', async () => {
+  const source = await readFile(new URL('../src/core/build-html.js', import.meta.url), 'utf8');
+
+  // A literal would silently decouple assembly from the module that defines the
+  // name. The three layer names are exported constants; assembly imports them.
+  assert.ok(!/layer\.name === 'base'/.test(source), 'the base layer must be compared by its exported name');
+  assert.ok(!/name: 'page-geometry'/.test(source), 'the geometry layer must be named by its exported constant');
+  assert.match(source, /BASE_STYLESHEET_NAME/);
+  assert.match(source, /PAGE_GEOMETRY_STYLESHEET_NAME/);
+  assert.match(source, /MERMAID_STYLESHEET_NAME/);
+});
+
+test('assembly takes no page geometry parameter, because no caller passes one', async () => {
+  const source = await readFile(new URL('../src/core/build-html.js', import.meta.url), 'utf8');
+
+  // Speculative generality: the parameter existed, nothing ever passed it, and
+  // the module now reads its own default. The geometry module still validates
+  // whatever it is given; that is a different function's job.
+  assert.ok(
+    !/export function buildHtml\(\{[^}]*page\s*=/.test(source),
+    'buildHtml must not take a page parameter nothing supplies',
+  );
+});
+
 test('assembly inlines the Mermaid program so the document needs no second fetch', async () => {
   const { readFile } = await import('node:fs/promises');
   const html = withOptions();
