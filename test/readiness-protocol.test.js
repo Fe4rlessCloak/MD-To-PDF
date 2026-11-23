@@ -104,6 +104,7 @@ test('the renderer references flags only through the protocol', async () => {
 test('every flag the renderer reads is published by the injected program', async () => {
   const published = new Set([
     ...referencedKeys(await sourceOf('mermaid-bootstrap.js'), 'flags'),
+    ...referencedKeys(await sourceOf('katex-bootstrap.js'), 'flags'),
     ...referencedKeys(await sourceOf('build-html.js'), 'RF'),
   ]);
   const polled = referencedKeys(await sourceOf('render-pdf.js'), 'READINESS_FLAGS');

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildHtml, mermaidBootstrapSource, neutralizeClosingTag } from '../src/core/build-html.js';
+import { buildHtml, mermaidBootstrapSource, katexBootstrapSource, neutralizeClosingTag } from '../src/core/build-html.js';
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
 
@@ -63,14 +63,18 @@ test('includes both bootstrap scripts and the protocol they publish through', ()
   // Flag names are owned by the readiness protocol; assert the protocol is
   // inlined for both bootstraps, and that each one is wired to it.
   assert.ok(html.includes(readinessFlagsSource()));
-  assert.ok(html.includes(`window[RF.mathRenderDone] = true`));
-  // The Mermaid program is a module now, so assembly inlines its source and
+  // Each browser program is a module now, so assembly inlines its source and
   // calls its entry point with the protocol handle rather than owning the
   // publication itself.
-  assert.ok(html.includes(mermaidBootstrapSource().trim()), 'assembly must inline the program');
+  assert.ok(html.includes(mermaidBootstrapSource().trim()), 'assembly must inline the Mermaid program');
+  assert.ok(html.includes(katexBootstrapSource().trim()), 'assembly must inline the math program');
   assert.ok(
     html.includes('runMermaidBootstrap({ flags: RF, fatalReportIndex: '),
-    'assembly must call the program with the protocol',
+    'assembly must call the Mermaid program with the protocol',
+  );
+  assert.ok(
+    html.includes('runKatexBootstrap({ flags: RF, fatalReportIndex: '),
+    'assembly must call the math program with the protocol',
   );
 });
 
@@ -194,12 +198,22 @@ test('the Mermaid program renders per-node and always signals done', async () =>
 
 test('skips CDN module imports at runtime when no diagrams or math are present and avoids 25s race', () => {
   const html = withOptions();
-  assert.ok(html.includes('if (nodes.length > 0)'));
-  assert.ok(html.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
-  assert.ok(html.includes('window[RF.mermaidReady]'));
+  const mermaid = mermaidBootstrapSource();
+  const math = katexBootstrapSource();
+
+  // Each program guards its CDN import behind a node-count check and waits on
+  // a promise rather than a timer, so a document with no diagrams and no math
+  // fetches nothing and no clock is involved.
+  assert.ok(mermaid.includes('if (nodes.length > 0)'));
+  assert.ok(math.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
+  assert.ok(math.includes('view[flags.mermaidReady]'));
   assert.ok(!html.includes('25000'));
-  assert.ok(html.includes('window[RF.mathErrors]'));
-  assert.ok(html.includes('el.textContent = raw'));
+  assert.ok(math.includes('view[flags.mathErrors]'));
+  assert.ok(math.includes('el.textContent = raw'));
+
+  // Both programs reach the document: assembly inlines them whole.
+  assert.ok(html.includes(mermaid.trim()));
+  assert.ok(html.includes(math.trim()));
 });
 
 test('inlined program and stylesheets open exactly as many elements as they close', () => {
@@ -224,6 +238,24 @@ test('neutralising a closing tag leaves an inert sequence the language still acc
   );
   assert.equal(neutralizeClosingTag('</SCRIPT>', 'script'), '<\\/SCRIPT>');
   assert.equal(neutralizeClosingTag('no closers here', 'script'), 'no closers here');
+});
+
+test('closing-tag neutralisation matches any casing and preserves the casing it found', () => {
+  // The HTML parser treats `</STYLE>` and `</Style>` as closers, so a
+  // case-sensitive replace would leave a working escape hatch in the output.
+  // The replacement keeps the matched casing so the inlined text stays
+  // readable in the language it belongs to.
+  const mixed = 'a </STYLE> b </style> c </Style> d </StYlE>';
+
+  assert.equal(
+    neutralizeClosingTag(mixed, 'style'),
+    'a <\\/STYLE> b <\\/style> c <\\/Style> d <\\/StYlE>',
+  );
+  assert.equal(
+    (neutralizeClosingTag(mixed, 'style').match(/<\/style/gi) ?? []).length,
+    0,
+    'no closer may survive in any casing',
+  );
 });
 
 test('a program that contains a closing script sequence cannot break out of its element', () => {

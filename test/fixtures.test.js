@@ -283,9 +283,10 @@ test('the assembled mixed document sequences math after Mermaid', async () => {
 
   // The historical failure was KaTeX mutating the DOM while Mermaid was still
   // rendering, which broke later diagrams. The KaTeX bootstrap must therefore
-  // wait on Mermaid readiness before it touches any math node.
-  const waitsForMermaid = html.indexOf('await window[RF.mermaidReady]');
-  const firstMathQuery = html.indexOf("querySelectorAll('.math-display')");
+  // wait on Mermaid readiness before it touches any math node. The wait now
+  // lives in the inlined program, so the assertion follows it there.
+  const waitsForMermaid = html.indexOf('await view[flags.mermaidReady]');
+  const firstMathQuery = html.indexOf("document_.querySelectorAll('.math-display')");
   assert.ok(waitsForMermaid > -1, 'the KaTeX bootstrap must await Mermaid readiness');
   assert.ok(firstMathQuery > -1, 'the KaTeX bootstrap must query math nodes');
   assert.ok(

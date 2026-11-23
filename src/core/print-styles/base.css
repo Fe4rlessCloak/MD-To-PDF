@@ -1,0 +1,26 @@
+/*
+ * Base print stylesheet — the safe defaults every document starts from.
+ *
+ * Assembly emits this first, so any user CSS or theme rule that sets the same
+ * property wins. Nothing here may be load-bearing for containment: those rules
+ * live in `mermaid-containment.css`, which is emitted after user CSS precisely
+ * so user CSS cannot override them.
+ *
+ * The @page margin is a fallback for a document rendered without a theme. Page
+ * geometry proper is owned elsewhere; this only keeps an unthemed document
+ * printable.
+ */
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.6;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}
+@page {
+  margin: 2cm 2.2cm;
+}

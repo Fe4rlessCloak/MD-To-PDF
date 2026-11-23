@@ -1,0 +1,27 @@
+/*
+ * Mermaid containment stylesheet — the print-size contract for diagrams.
+ *
+ * Emitted after user CSS on purpose. These rules decide how a diagram is
+ * squeezed into the page, and a theme that could override them could produce a
+ * diagram taller than the page, which no later rule can repair. The four
+ * priority declarations on the SVG are what make that guarantee hold against
+ * inline sizing that Mermaid itself writes.
+ */
+.mermaid {
+  display: block;
+  overflow: visible;
+  width: 100%;
+  max-height: 45vh;
+  margin: 1.5rem auto;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  text-align: center;
+}
+.mermaid svg {
+  display: block;
+  max-width: 100% !important;
+  max-height: 45vh !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 auto !important;
+}
