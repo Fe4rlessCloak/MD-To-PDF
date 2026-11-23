@@ -163,6 +163,10 @@ export function normalizeLabelColors(doc, computedStyle) {
  * Published on the debug flag and never polled; the data exists so a layout
  * regression can be diagnosed from a real render.
  *
+ * These are diagnostics, not failure reports: they carry measurements rather
+ * than an error message, so they are not {@link
+ * import('./readiness-protocol.js').ReadinessReport}s.
+ *
  * @param {Document} doc
  * @returns {Array<Object>}
  */

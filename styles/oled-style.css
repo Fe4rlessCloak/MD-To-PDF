@@ -64,8 +64,7 @@ body {
 }
 
 html,
-body,
-.content {
+body {
     background: #000000 !important;
     color: #e0e0e0;
 }
@@ -291,12 +290,6 @@ pre {
     white-space: nowrap;
     width: 30%;
 }
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}
-
 /* --- FORCE DARK PAGE SURFACES / REMOVE STRAY LIGHT OUTLINES --- */
 /* `.mermaid` is deliberately absent from both lists below: every Mermaid rule,
    including the generated SVG's surface, now lives in the shared block at

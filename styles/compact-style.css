@@ -33,8 +33,14 @@
     --mermaid-label-weight: 400;
 
     /* Page geometry values only. The @page rule itself is owned by
-       src/core/page-geometry.js; a theme must never declare one. */
+       src/core/page-geometry.js; a theme must never declare one.
+       The footer is small and soft here so a dense page keeps its
+       quiet margin; the values are the ones this theme declared as
+       its own @page margin box before geometry was centralised. */
     --page-margin: 1.4cm 1.5cm;
+    --page-background: #ffffff;
+    --page-footer-font-size: 8pt;
+    --page-footer-color: #4a4a4a;
 }
 
 /* --- BODY --- */
@@ -263,9 +269,4 @@ pre {
     color: var(--accent-deep);
     white-space: nowrap;
     width: 28%;
-}
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
 }

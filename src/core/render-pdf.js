@@ -2,10 +2,12 @@
  * @file Launch Puppeteer, render the HTML document, wait for Mermaid
  * diagrams and KaTeX math to finish rendering, and export the PDF.
  *
- * This module is the browser adapter for the readiness protocol: it launches
- * the page, hands the protocol two closures over that page, and exports. All
- * polling and all fatal-versus-warning decisions live in
- * `readiness-protocol.js`.
+ * This module is one adapter over the readiness protocol's seam: it supplies a
+ * page evaluator to the protocol, which owns all polling and every
+ * fatal-versus-warning decision. It is not the seam itself; the seam is the
+ * evaluator parameter that `readiness-protocol.js` declares, and this module
+ * is one concrete thing that satisfies it (a scripted fake in a test is
+ * another).
  */
 
 import puppeteer from 'puppeteer';
@@ -74,31 +76,38 @@ export async function renderPdf(html, options = {}) {
     // readiness are awaited explicitly via their completion flags below.
     await page.setContent(html, { waitUntil: 'load' });
 
-    /** The readiness seam: one flag in, its value out. */
+    /**
+     * The page evaluator the protocol's waiting step takes by injection: one
+     * flag name in, its value out. This closure is the adapter over the real
+     * page, not the seam — the seam is the parameter `waitForReadiness`
+     * declares.
+     */
     const readFlag = (flag) => page.evaluate((name) => window[name], flag);
-    /** Read an error-report array, defaulting to empty. */
-    const readReports = (flag) => page.evaluate((name) => window[name] || [], flag);
+    /** Read a report array published on `window`, defaulting to empty. */
+    const readFlagValue = (flag) => page.evaluate((name) => window[name] || [], flag);
 
     await waitForReadiness(readFlag, READINESS_FLAGS.mermaidRenderDone, {
       label: 'Mermaid diagrams',
     });
-    checkErrorReports(await readReports(READINESS_FLAGS.mermaidErrors), {
+    checkErrorReports(await readFlagValue(READINESS_FLAGS.mermaidErrors), {
       runtime: 'Mermaid',
       noun: 'Mermaid diagram',
+      reportKind: 'diagram',
       sink: toStderr,
     });
 
     await waitForReadiness(readFlag, READINESS_FLAGS.mathRenderDone, {
       label: 'KaTeX math',
     });
-    checkErrorReports(await readReports(READINESS_FLAGS.mathErrors), {
+    checkErrorReports(await readFlagValue(READINESS_FLAGS.mathErrors), {
       runtime: 'KaTeX',
       noun: 'math expression',
+      reportKind: 'expression',
       sink: toStderr,
     });
 
     if (process.env.MD_TO_PDF_DEBUG) {
-      const mermaidDebug = await readReports(READINESS_FLAGS.mermaidDebug);
+      const mermaidDebug = await readFlagValue(READINESS_FLAGS.mermaidDebug);
       process.stderr.write(`[renderPdf()] Mermaid debug: ${JSON.stringify(mermaidDebug)}\n`);
     }
 

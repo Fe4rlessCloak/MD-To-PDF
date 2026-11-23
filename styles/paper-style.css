@@ -273,8 +273,3 @@ pre {
     white-space: nowrap;
     width: 30%;
 }
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}

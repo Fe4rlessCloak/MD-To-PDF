@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 import {
   MERMAID_VARIABLES,
@@ -26,17 +26,24 @@ import {
   optionalVariableNames,
   missingVariables,
   selectorList,
+  canonicalSelector,
   redeclaredSelectors,
 } from '../src/core/mermaid-styles/mermaid-styles.js';
 
-/** Every bundled theme, in `styles/`. */
-const BUNDLED_THEMES = [
-  'style.css',
-  'compact-style.css',
-  'contrast-style.css',
-  'paper-style.css',
-  'oled-style.css',
-];
+/**
+ * Every bundled theme, discovered from `styles/` rather than listed.
+ *
+ * A literal list would let a sixth stylesheet drop into the directory
+ * unguarded — exactly the half-styled theme these tests exist to prevent. The
+ * directory is the source of truth, so a new file is covered the moment it
+ * lands.
+ *
+ * @returns {Promise<string[]>} Theme file names, sorted for stable messages.
+ */
+async function bundledThemes() {
+  const entries = await readdir(new URL('../styles/', import.meta.url));
+  return entries.filter((name) => name.endsWith('.css')).sort();
+}
 
 /** Read a theme's CSS text. @param {string} name */
 const readTheme = (name) => readFile(new URL(`../styles/${name}`, import.meta.url), 'utf-8');
@@ -104,7 +111,7 @@ test('every bundled theme defines every required variable', async () => {
   const required = requiredVariableNames();
   assert.ok(required.length >= 4, 'the block must require a real palette');
 
-  for (const theme of BUNDLED_THEMES) {
+  for (const theme of await bundledThemes()) {
     const missing = missingVariables(await readTheme(theme));
     assert.deepEqual(
       missing,
@@ -143,7 +150,7 @@ test('a variable declared with no value counts as missing', () => {
 // ---------------------------------------------------------------------------
 
 test('no bundled theme redeclares a selector from the shared block', async () => {
-  for (const theme of BUNDLED_THEMES) {
+  for (const theme of await bundledThemes()) {
     const redeclared = redeclaredSelectors(await readTheme(theme));
     assert.deepEqual(
       redeclared,
@@ -159,8 +166,28 @@ test('a theme that re-grows a shared selector is reported by name', () => {
   assert.deepEqual(redeclaredSelectors(`${shared} { fill: red; }`), [shared]);
 });
 
+test('selector drift is caught even when the spacing or combinator form differs', () => {
+  // The failure this closes: a theme restating a block rule as
+  // `.mermaid svg .node .label>rect` used to compare unequal to the block's
+  // `.mermaid svg .node .label > rect` and slip through as `[]`.
+  const drifted = '.mermaid svg .node .label>rect { fill: red; }';
+  assert.deepEqual(redeclaredSelectors(drifted), ['.mermaid svg .node .label > rect']);
+
+  const padded = '.mermaid   svg  .edgeLabel    .background { fill: red; }';
+  assert.deepEqual(redeclaredSelectors(padded), ['.mermaid svg .edgeLabel .background']);
+
+  const inGroup = '.mermaid svg .label > rect, .mermaid svg .node rect { fill: red; }';
+  assert.deepEqual(redeclaredSelectors(inGroup), ['.mermaid svg .node rect']);
+});
+
+test('canonicalSelector normalises spacing without changing what a selector targets', () => {
+  assert.equal(canonicalSelector('.a  .b>c'), '.a .b > c');
+  assert.equal(canonicalSelector('  .a .b > c  '), '.a .b > c');
+  assert.equal(canonicalSelector('.a + .b ~ .c'), '.a + .b ~ .c');
+});
+
 test('the bundled themes no longer carry a Mermaid selector list of their own', async () => {
-  for (const theme of BUNDLED_THEMES) {
+  for (const theme of await bundledThemes()) {
     const mermaidSelectors = selectorList(await readTheme(theme)).filter((selector) =>
       selector.includes('.mermaid'),
     );
@@ -187,7 +214,7 @@ test('the light default supplies the palette but keeps its normalisation opt-out
 });
 
 test('the four non-default themes keep their normalisation opt-in', async () => {
-  for (const theme of BUNDLED_THEMES.filter((name) => name !== 'style.css')) {
+  for (const theme of (await bundledThemes()).filter((name) => name !== 'style.css')) {
     assert.ok(
       (await readTheme(theme)).includes('--mermaid-normalize: 1'),
       `${theme} must keep opting in to label normalisation`,

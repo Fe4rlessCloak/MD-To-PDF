@@ -30,6 +30,16 @@
  */
 
 /**
+ * Name under which the `@page` rule is emitted as its own stylesheet layer.
+ *
+ * Assembly appends it after every print layer; naming it here keeps the
+ * document's layer vocabulary in one place, next to the rule it labels.
+ *
+ * @type {string}
+ */
+export const PAGE_GEOMETRY_STYLESHEET_NAME = 'page-geometry';
+
+/**
  * CSS custom property names a theme uses to supply geometry.
  *
  * These names are a cross-file contract: the module writes them into the page

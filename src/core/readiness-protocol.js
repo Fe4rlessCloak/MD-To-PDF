@@ -119,12 +119,28 @@ export async function waitForReadiness(evaluate, flagName, options = {}) {
 }
 
 /**
+ * One failure report published by a bootstrap.
+ *
+ * The shape both browser programs push onto an error-report array, and what
+ * the classification and description steps below consume. Declared once
+ * because it crosses the language boundary: the programs are browser code, the
+ * readers are Node, and a field renamed on one side must be renamed on both.
+ *
+ * @typedef {Object} ReadinessReport
+ * @property {number} index        Position of the diagram or expression in its document;
+ *                                 {@link FATAL_REPORT_INDEX} when the runtime itself failed.
+ * @property {string} [kind]       What failed, when the producing program distinguishes
+ *                                 kinds (e.g. `display`, `inline`, `bootstrap`).
+ * @property {string} error        Human-readable failure message.
+ */
+
+/**
  * Split a set of error reports into the fatal one, if any, and the warnings.
  *
  * Pure: same reports in, same classification out, no printing and no throwing.
  *
- * @param {Array<{index: number, kind?: string, error: string}>} [reports]
- * @returns {{ fatal: object|null, warnings: object[] }}
+ * @param {ReadinessReport[]} [reports]
+ * @returns {{ fatal: ReadinessReport|null, warnings: ReadinessReport[] }}
  */
 export function classifyErrorReports(reports) {
   const all = Array.isArray(reports) ? reports : [];
@@ -136,11 +152,17 @@ export function classifyErrorReports(reports) {
 /**
  * One report as a line of text, e.g. `diagram 2: bad` or `inline 4: bad`.
  *
- * @param {{index: number, kind?: string, error: string}} entry
+ * The noun used when a report carries no `kind` is a parameter, not a default
+ * baked in here: this module is shared by two bootstraps with different
+ * vocabularies, and naming one consumer's noun would put its words in the
+ * other's output.
+ *
+ * @param {ReadinessReport} entry
+ * @param {string} [fallbackKind='report']  Noun for a report with no `kind`.
  * @returns {string}
  */
-export function describeReport(entry) {
-  return `${entry.kind ?? 'diagram'} ${entry.index}: ${entry.error}`;
+export function describeReport(entry, fallbackKind = 'report') {
+  return `${entry.kind ?? fallbackKind} ${entry.index}: ${entry.error}`;
 }
 
 /**
@@ -150,17 +172,20 @@ export function describeReport(entry) {
  * This is the renderer-facing adapter over {@link classifyErrorReports}; it
  * exists so the renderer has no fatal-versus-warning branch of its own. The
  * sink takes one complete line, so tests can collect lines instead of
- * intercepting stderr.
+ * intercepting stderr. It returns nothing: the outcome is the throw or the
+ * lines written, and a caller that wants the classification itself asks
+ * {@link classifyErrorReports}.
  *
- * @param {Array<{index: number, kind?: string, error: string}>} [reports]
+ * @param {ReadinessReport[]} [reports]
  * @param {Object} options
- * @param {string} options.runtime  Runtime name for the fatal message, e.g. `Mermaid`.
- * @param {string} options.noun     What one warning concerns, e.g. `math expression`.
+ * @param {string} options.runtime     Runtime name for the fatal message, e.g. `Mermaid`.
+ * @param {string} options.noun        What one warning concerns, e.g. `math expression`.
+ * @param {string} [options.reportKind='report']  Noun for a warning line with no `kind`.
  * @param {(line: string) => void} options.sink
- * @returns {{ fatal: object|null, warnings: object[] }}
+ * @returns {void}
  * @throws {RenderError} When a report carries {@link FATAL_REPORT_INDEX}.
  */
-export function checkErrorReports(reports, { runtime, noun, sink }) {
+export function checkErrorReports(reports, { runtime, noun, reportKind = 'report', sink }) {
   const { fatal, warnings } = classifyErrorReports(reports);
 
   if (fatal) {
@@ -169,10 +194,8 @@ export function checkErrorReports(reports, { runtime, noun, sink }) {
 
   if (warnings.length > 0) {
     sink(`[renderPdf()] Warning: ${warnings.length} ${noun}(s) failed to render:`);
-    for (const entry of warnings) sink(`  - ${describeReport(entry)}`);
+    for (const entry of warnings) sink(`  - ${describeReport(entry, reportKind)}`);
   }
-
-  return { fatal, warnings };
 }
 
 /**
