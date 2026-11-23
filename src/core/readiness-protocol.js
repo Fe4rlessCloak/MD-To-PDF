@@ -6,10 +6,15 @@
  * Both halves must agree on the same spellings. Defining the names here — once
  * — means a rename breaks a test rather than silently timing out every PDF.
  *
- * This module owns the *names*. Polling and error classification are the
- * renderer's business (see `render-pdf.js`); publishing is the injected
- * program's business (see `build-html.js`).
+ * It owns the names, the waiting step and the classification of an error
+ * report into a fatal outcome versus warnings. Both steps take their
+ * collaborator by injection — a page evaluator for waiting, a report array for
+ * classification — so the renderer can be a thin adapter over a real page and
+ * tests can be a scripted fake. Publishing is the injected program's business
+ * (see `build-html.js`).
  */
+
+import { RenderError } from './errors.js';
 
 /**
  * The six readiness globals the pipeline depends on.
@@ -43,6 +48,132 @@ export const READINESS_FLAGS = Object.freeze({
   /** True once the KaTeX bootstrap is finished. */
   mathRenderDone: '__MATH_RENDER_DONE__',
 });
+
+/**
+ * How often the renderer re-checks a readiness flag, in milliseconds.
+ *
+ * Owned here rather than at the call site so that the poll cadence is a
+ * property of the protocol, not of one renderer.
+ *
+ * @type {number}
+ */
+export const READINESS_POLL_INTERVAL_MS = 100;
+
+/**
+ * How long the renderer waits for a readiness flag before failing, in
+ * milliseconds.
+ *
+ * @type {number}
+ */
+export const READINESS_TIMEOUT_MS = 30_000;
+
+/**
+ * The `index` a report carries when the failure is not one diagram or
+ * expression but the runtime itself: a CDN load that never happened.
+ *
+ * Reports with this index are fatal; every other report is a warning about a
+ * single bad diagram or expression. Naming it here means call sites compare
+ * against a meaning rather than re-deriving what minus one stands for.
+ *
+ * @type {number}
+ */
+export const FATAL_REPORT_INDEX = -1;
+
+/** @param {number} ms @returns {Promise<void>} */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Wait until a readiness flag is truthy, or fail with a `RenderError`.
+ *
+ * The page is injected as an evaluator — `(flagName) => Promise<unknown>` — so
+ * this function has no browser of its own. The real adapter is
+ * `(flag) => page.evaluate(...)`; the test adapter is a scripted fake.
+ *
+ * @param {(flagName: string) => Promise<unknown>} evaluate
+ * @param {string} flagName  Global name from {@link READINESS_FLAGS}.
+ * @param {Object} [options]
+ * @param {string} [options.label=flagName]   What is being waited for, used in the timeout message.
+ * @param {number} [options.pollIntervalMs=READINESS_POLL_INTERVAL_MS]
+ * @param {number} [options.timeoutMs=READINESS_TIMEOUT_MS]
+ * @returns {Promise<true>}
+ * @throws {RenderError} If the flag is still falsy when the timeout elapses.
+ */
+export async function waitForReadiness(evaluate, flagName, options = {}) {
+  const {
+    label = flagName,
+    pollIntervalMs = READINESS_POLL_INTERVAL_MS,
+    timeoutMs = READINESS_TIMEOUT_MS,
+  } = options;
+
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    if (await evaluate(flagName)) return true;
+    if (Date.now() >= deadline) break;
+    await delay(pollIntervalMs);
+  }
+
+  throw new RenderError(
+    `${label} did not finish rendering within ${timeoutMs / 1000} seconds.`
+  );
+}
+
+/**
+ * Split a set of error reports into the fatal one, if any, and the warnings.
+ *
+ * Pure: same reports in, same classification out, no printing and no throwing.
+ *
+ * @param {Array<{index: number, kind?: string, error: string}>} [reports]
+ * @returns {{ fatal: object|null, warnings: object[] }}
+ */
+export function classifyErrorReports(reports) {
+  const all = Array.isArray(reports) ? reports : [];
+  const fatal = all.find((entry) => entry.index === FATAL_REPORT_INDEX) ?? null;
+  const warnings = all.filter((entry) => entry.index !== FATAL_REPORT_INDEX);
+  return { fatal, warnings };
+}
+
+/**
+ * One report as a line of text, e.g. `diagram 2: bad` or `inline 4: bad`.
+ *
+ * @param {{index: number, kind?: string, error: string}} entry
+ * @returns {string}
+ */
+export function describeReport(entry) {
+  return `${entry.kind ?? 'diagram'} ${entry.index}: ${entry.error}`;
+}
+
+/**
+ * Apply a classification: throw on a fatal report, otherwise report each
+ * warning through the injected sink.
+ *
+ * This is the renderer-facing adapter over {@link classifyErrorReports}; it
+ * exists so the renderer has no fatal-versus-warning branch of its own. The
+ * sink takes one complete line, so tests can collect lines instead of
+ * intercepting stderr.
+ *
+ * @param {Array<{index: number, kind?: string, error: string}>} [reports]
+ * @param {Object} options
+ * @param {string} options.runtime  Runtime name for the fatal message, e.g. `Mermaid`.
+ * @param {string} options.noun     What one warning concerns, e.g. `math expression`.
+ * @param {(line: string) => void} options.sink
+ * @returns {{ fatal: object|null, warnings: object[] }}
+ * @throws {RenderError} When a report carries {@link FATAL_REPORT_INDEX}.
+ */
+export function checkErrorReports(reports, { runtime, noun, sink }) {
+  const { fatal, warnings } = classifyErrorReports(reports);
+
+  if (fatal) {
+    throw new RenderError(`Failed to load ${runtime} runtime: ${fatal.error}`);
+  }
+
+  if (warnings.length > 0) {
+    sink(`[renderPdf()] Warning: ${warnings.length} ${noun}(s) failed to render:`);
+    for (const entry of warnings) sink(`  - ${describeReport(entry)}`);
+  }
+
+  return { fatal, warnings };
+}
 
 /**
  * Emit the protocol as JavaScript source, for inclusion in the injected

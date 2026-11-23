@@ -1,11 +1,20 @@
 /**
  * @file Launch Puppeteer, render the HTML document, wait for Mermaid
  * diagrams and KaTeX math to finish rendering, and export the PDF.
+ *
+ * This module is the browser adapter for the readiness protocol: it launches
+ * the page, hands the protocol two closures over that page, and exports. All
+ * polling and all fatal-versus-warning decisions live in
+ * `readiness-protocol.js`.
  */
 
 import puppeteer from 'puppeteer';
 import { RenderError } from './errors.js';
-import { READINESS_FLAGS } from './readiness-protocol.js';
+import {
+  READINESS_FLAGS,
+  waitForReadiness,
+  checkErrorReports,
+} from './readiness-protocol.js';
 
 /**
  * Default Puppeteer launch options.
@@ -34,33 +43,8 @@ const DEFAULT_PDF_OPTIONS = {
   preferCSSPageSize: true,
 };
 
-/**
- * Wait for a browser-side rendering flag to become true.
- *
- * @param {import('puppeteer').Page} page
- * @param {string} flagName  Global variable name to poll for.
- * @param {string} label     Human-readable label for error messages.
- * @param {number} [timeoutMs=30_000]
- * @returns {Promise<boolean>}  Whether the flag was set before timeout.
- */
-async function waitForFlag(page, flagName, label, timeoutMs = 30_000) {
-  return page.evaluate(({ flag, label, timeout }) => {
-    if (window[flag]) return true;
-
-    return new Promise((resolve) => {
-      const check = setInterval(() => {
-        if (window[flag]) {
-          clearInterval(check);
-          resolve(true);
-        }
-      }, 100);
-      setTimeout(() => {
-        clearInterval(check);
-        resolve(false);
-      }, timeout);
-    });
-  }, { flag: flagName, label, timeout: timeoutMs });
-}
+/** @param {string} line */
+const toStderr = (line) => process.stderr.write(`${line}\n`);
 
 /**
  * Render an HTML string to a PDF buffer.
@@ -84,58 +68,31 @@ export async function renderPdf(html, options = {}) {
     // readiness are awaited explicitly via their completion flags below.
     await page.setContent(html, { waitUntil: 'load' });
 
-    // Wait for Mermaid to finish rendering.
-    const mermaidDone = await waitForFlag(page, READINESS_FLAGS.mermaidRenderDone, 'Mermaid');
-    if (!mermaidDone) {
-      throw new RenderError(
-        'Mermaid diagrams did not finish rendering within 30 seconds.'
-      );
-    }
+    /** The readiness seam: one flag in, its value out. */
+    const readFlag = (flag) => page.evaluate((name) => window[name], flag);
+    /** Read an error-report array, defaulting to empty. */
+    const readReports = (flag) => page.evaluate((name) => window[name] || [], flag);
 
-    // Fail fast on Mermaid bootstrap/CDN failure; warn on per-diagram syntax errors.
-    const mermaidErrors = await page.evaluate((flags) => window[flags.mermaidErrors] || [], READINESS_FLAGS);
-    const mermaidFatal = mermaidErrors.find((e) => e.index === -1);
-    if (mermaidFatal) {
-      throw new RenderError(
-        `Failed to load Mermaid runtime: ${mermaidFatal.error}`
-      );
-    }
-    if (mermaidErrors.length > 0) {
-      process.stderr.write(
-        `[renderPdf()] Warning: ${mermaidErrors.length} Mermaid diagram(s) failed to render:\n`
-      );
-      for (const entry of mermaidErrors) {
-        process.stderr.write(`  - diagram ${entry.index}: ${entry.error}\n`);
-      }
-    }
+    await waitForReadiness(readFlag, READINESS_FLAGS.mermaidRenderDone, {
+      label: 'Mermaid diagrams',
+    });
+    checkErrorReports(await readReports(READINESS_FLAGS.mermaidErrors), {
+      runtime: 'Mermaid',
+      noun: 'Mermaid diagram',
+      sink: toStderr,
+    });
 
-    // Wait for KaTeX to finish rendering.
-    const mathDone = await waitForFlag(page, READINESS_FLAGS.mathRenderDone, 'KaTeX');
-    if (!mathDone) {
-      throw new RenderError(
-        'KaTeX math did not finish rendering within 30 seconds.'
-      );
-    }
-
-    // Fail fast on KaTeX bootstrap/CDN failure; warn on per-expression errors.
-    const mathErrors = await page.evaluate((flags) => window[flags.mathErrors] || [], READINESS_FLAGS);
-    const mathFatal = mathErrors.find((e) => e.index === -1);
-    if (mathFatal) {
-      throw new RenderError(
-        `Failed to load KaTeX runtime: ${mathFatal.error}`
-      );
-    }
-    if (mathErrors.length > 0) {
-      process.stderr.write(
-        `[renderPdf()] Warning: ${mathErrors.length} math expression(s) failed to render:\n`
-      );
-      for (const entry of mathErrors) {
-        process.stderr.write(`  - ${entry.kind} ${entry.index}: ${entry.error}\n`);
-      }
-    }
+    await waitForReadiness(readFlag, READINESS_FLAGS.mathRenderDone, {
+      label: 'KaTeX math',
+    });
+    checkErrorReports(await readReports(READINESS_FLAGS.mathErrors), {
+      runtime: 'KaTeX',
+      noun: 'math expression',
+      sink: toStderr,
+    });
 
     if (process.env.MD_TO_PDF_DEBUG) {
-      const mermaidDebug = await page.evaluate((flags) => window[flags.mermaidDebug] || [], READINESS_FLAGS);
+      const mermaidDebug = await readReports(READINESS_FLAGS.mermaidDebug);
       process.stderr.write(`[renderPdf()] Mermaid debug: ${JSON.stringify(mermaidDebug)}\n`);
     }
 
