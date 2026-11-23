@@ -12,8 +12,9 @@ The main entrypoint is [`convert.js`](convert.js), which reads Markdown, builds 
 
 ## Features
 
-- Markdown to PDF conversion via [`renderPdf()`](src/core/render-pdf.js:73)
-- Optional stylesheet injection via [`--style`](src/cli/parse-args.js:49)
+- Markdown to PDF conversion via [`renderPdf()`](src/core/render-pdf.js)
+- Optional stylesheet injection via [`--style`](src/core/document-options.js)
+- Document title via [`--title`](src/core/document-options.js), applied to the HTML `<title>`
 - Mermaid fenced code block support in [`renderMarkdown()`](src/core/render-markdown.js:121)
 - Inline LaTeX support with [`$...$`](src/core/render-markdown.js:6)
 - Block LaTeX support with [`$$...$$`](src/core/render-markdown.js:7)
@@ -55,6 +56,12 @@ With a stylesheet:
 node convert.js input.md output.pdf --style ./styles/style.css
 ```
 
+With a document title (sets the HTML `<title>` and the PDF metadata title):
+
+```bash
+node convert.js input.md output.pdf --title 'Quarterly Report'
+```
+
 Any theme in [`styles/`](styles/) is selected the same way:
 
 ```bash
@@ -64,7 +71,11 @@ node convert.js input.md output.pdf --style ./styles/contrast-style.css
 node convert.js input.md output.pdf --style ./styles/compact-style.css
 ```
 
-Argument parsing is handled by [`parseArgs()`](src/cli/parse-args.js:28).
+Argument parsing is handled by [`parseArgs()`](src/cli/parse-args.js), which fills the
+document options defined in [`document-options.js`](src/core/document-options.js).
+Unknown flags are rejected with an error naming the flag, and the `--format` and
+`--margin` options — documented above as forthcoming — are rejected with an error
+saying they are not yet implemented.
 
 ## Supported Markdown Enhancements
 
@@ -112,15 +123,16 @@ This protection is implemented in [`preprocessMath()`](src/core/render-markdown.
 
 The CLI flow is:
 
-1. Parse arguments in [`parseArgs()`](src/cli/parse-args.js:28)
+1. Parse arguments into document options in [`parseArgs()`](src/cli/parse-args.js) and [`createDocumentOptions()`](src/core/document-options.js)
 2. Read Markdown and optional CSS in [`readMarkdown()`](src/core/load-input.js:11) and [`readStylesheet()`](src/core/load-input.js:24)
 3. Convert Markdown to HTML in [`renderMarkdown()`](src/core/render-markdown.js:121)
-4. Build the full HTML document in [`buildHtml()`](src/core/build-html.js:170)
-5. Render Mermaid and KaTeX in Chromium and export PDF in [`renderPdf()`](src/core/render-pdf.js:73)
+4. Build the full HTML document in [`buildHtml()`](src/core/build-html.js), which consumes the options whole
+5. Render Mermaid and KaTeX in Chromium and export PDF in [`renderPdf()`](src/core/render-pdf.js)
+6. Write the file in [`writePdfOutput()`](src/core/write-output.js), classifying failures as input errors
 
 ## CSS Injection
 
-Any file passed with [`--style`](src/cli/parse-args.js:49) is read and injected into the generated HTML document by [`buildHtml()`](src/core/build-html.js:170).
+Any file passed with [`--style`](src/core/document-options.js) is read and injected into the generated HTML document by [`buildHtml()`](src/core/build-html.js).
 
 This allows you to reuse existing typography, spacing, colors, and print rules.
 
@@ -244,6 +256,8 @@ node convert.js documents/test-math.md documents/test-math-oled.pdf --style ./st
 
 ## Notes
 
-- The current CLI supports [`--style`](src/cli/parse-args.js:49) and is structured for future expansion.
-- Unknown flags are currently ignored for forward compatibility in [`parseArgs()`](src/cli/parse-args.js:55).
-- Mermaid debug output is currently printed during rendering in [`renderPdf()`](src/core/render-pdf.js:101).
+- The CLI supports [`--style`](src/core/document-options.js) and [`--title`](src/core/document-options.js); both are declared in the document options module.
+- Unknown flags are rejected with an error naming the flag in [`parseArgs()`](src/cli/parse-args.js).
+- `--format` and `--margin` are documented but not yet implemented, and are rejected rather than silently ignored.
+- Output-file write failures are reported as input errors (exit code 2) by [`writePdfOutput()`](src/core/write-output.js).
+- Mermaid debug output is printed when `MD_TO_PDF_DEBUG` is set, in [`renderPdf()`](src/core/render-pdf.js).

@@ -254,13 +254,20 @@ try {
 /**
  * Build a complete HTML document string.
  *
- * @param {Object} options
- * @param {string}  options.bodyHtml     Rendered Markdown HTML.
- * @param {string|null} options.userCss  Optional user-provided CSS text.
- * @param {string}  [options.title]      Optional document title.
+ * The document options are consumed whole, so an option added to
+ * `document-options.js` reaches assembly without a change here or at the
+ * call site.
+ *
+ * @param {Object} params
+ * @param {string}  params.bodyHtml     Rendered Markdown HTML.
+ * @param {string|null} params.userCss  Optional user-provided CSS text.
+ * @param {import('./document-options.js').DocumentOptions} [params.options]
+ *   Document options; supplies the title.
  * @returns {string}
  */
-export function buildHtml({ bodyHtml, userCss, title }) {
+export function buildHtml({ bodyHtml, userCss, options = {} }) {
+  const title = options.title ?? null;
+
   const stylesheets = [BASE_CSS];
   if (userCss) stylesheets.push(userCss);
   stylesheets.push(MERMAID_CSS);

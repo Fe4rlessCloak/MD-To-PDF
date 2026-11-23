@@ -3,45 +3,61 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildHtml } from '../src/core/build-html.js';
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
+import { createDocumentOptions } from '../src/core/document-options.js';
 
 const BODY = '<p>Hello <strong>world</strong></p>';
 const USER_CSS = '.custom-marker { color: rebeccapurple; }';
 
+/** Build with a full document options object, as the CLI does. */
+const withOptions = (overrides = {}, extra = {}) =>
+  buildHtml({
+    bodyHtml: BODY,
+    userCss: null,
+    options: createDocumentOptions(overrides),
+    ...extra,
+  });
+
 test('returns a complete HTML document', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.match(html, /^<!DOCTYPE html>/);
   assert.ok(html.trimEnd().endsWith('</html>'));
 });
 
 test('embeds the body HTML', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
-  assert.ok(html.includes(BODY));
+  assert.ok(withOptions().includes(BODY));
 });
 
 test('includes base, Mermaid, and KaTeX stylesheets', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.ok(html.includes('font-family: Georgia'));
   assert.ok(html.includes('.mermaid svg'));
   assert.ok(html.includes('.math-display'));
 });
 
 test('injects user CSS when provided', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: USER_CSS });
+  const html = buildHtml({
+    bodyHtml: BODY,
+    userCss: USER_CSS,
+    options: createDocumentOptions(),
+  });
   assert.ok(html.includes(USER_CSS));
 });
 
 test('omits user CSS when null', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
-  assert.ok(!html.includes(USER_CSS));
+  assert.ok(!withOptions().includes(USER_CSS));
 });
 
 test('places user CSS before the Mermaid containment styles', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: USER_CSS });
+  const html = buildHtml({
+    bodyHtml: BODY,
+    userCss: USER_CSS,
+    options: createDocumentOptions(),
+  });
   assert.ok(html.indexOf(USER_CSS) < html.indexOf('.mermaid svg'));
 });
 
 test('includes both bootstrap scripts and completion flags', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.ok(html.includes('mermaid.esm.min.mjs'));
   assert.ok(html.includes('katex.mjs'));
   // Flag names are owned by the readiness protocol; assert the reference the
@@ -52,25 +68,47 @@ test('includes both bootstrap scripts and completion flags', () => {
 });
 
 test('includes the KaTeX stylesheet link', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
-  assert.ok(html.includes('katex.min.css'));
+  assert.ok(withOptions().includes('katex.min.css'));
 });
 
-test('renders a title when provided and omits it otherwise', () => {
-  const withTitle = buildHtml({ bodyHtml: BODY, userCss: null, title: 'My Doc' });
-  assert.ok(withTitle.includes('<title>My Doc</title>'));
+test('sets the document title from the options object', () => {
+  const html = withOptions({ title: 'My Doc' });
+  assert.ok(html.includes('<title>My Doc</title>'));
+});
 
-  const withoutTitle = buildHtml({ bodyHtml: BODY, userCss: null });
-  assert.ok(!withoutTitle.includes('<title>'));
+test('omits the title element when the options carry no title', () => {
+  assert.ok(!withOptions().includes('<title>'));
+  assert.ok(!withOptions({ title: null }).includes('<title>'));
 });
 
 test('escapes HTML special characters in the title', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null, title: 'A & B <C> "D"' });
+  const html = withOptions({ title: 'A & B <C> "D"' });
   assert.ok(html.includes('<title>A &amp; B &lt;C&gt; &quot;D&quot;</title>'));
 });
 
+test('reads a title it was not individually told about, because options carry it', () => {
+  // The call site passes only the options object; no per-option argument.
+  const options = createDocumentOptions({ title: 'Reached Through Options' });
+  const html = buildHtml({ bodyHtml: BODY, userCss: null, options });
+  assert.ok(html.includes('<title>Reached Through Options</title>'));
+});
+
+test('ignores options that only concern the CLI, without a call-site change', () => {
+  const options = createDocumentOptions({
+    input: 'in.md',
+    output: 'out.pdf',
+    style: 'theme.css',
+    title: 'T',
+  });
+  const html = buildHtml({ bodyHtml: BODY, userCss: null, options });
+  assert.ok(html.includes('<title>T</title>'));
+  assert.ok(html.includes(BODY));
+  // The stylesheet path is not inlined; only the loaded CSS text is.
+  assert.ok(!html.includes('theme.css'));
+});
+
 test('bootstrap strips inline Mermaid text colours when a theme opts in', async () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.ok(html.includes('--mermaid-normalize'));
   assert.ok(html.includes("removeProperty('color')"));
 
@@ -94,20 +132,24 @@ test('bootstrap strips inline Mermaid text colours when a theme opts in', async 
 });
 
 test('base CSS provides an @page margin fallback before user CSS', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: USER_CSS });
+  const html = buildHtml({
+    bodyHtml: BODY,
+    userCss: USER_CSS,
+    options: createDocumentOptions(),
+  });
   assert.match(html, /@page\s*\{[^}]*margin:/);
   assert.ok(html.indexOf('@page') < html.indexOf(USER_CSS));
 });
 
 test('mermaid bootstrap renders diagrams per-node and always signals done', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.ok(html.includes('mermaid.render('));
   assert.ok(html.includes('window[RF.mermaidErrors].push('));
   assert.ok(html.includes('finally'));
 });
 
 test('skips CDN module imports at runtime when no diagrams or math are present and avoids 25s race', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: null });
+  const html = withOptions();
   assert.ok(html.includes('if (nodes.length > 0)'));
   assert.ok(html.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
   assert.ok(html.includes('window[RF.mermaidReady]'));
@@ -117,7 +159,11 @@ test('skips CDN module imports at runtime when no diagrams or math are present a
 });
 
 test('neutralizes closing style tags inside userCss', () => {
-  const html = buildHtml({ bodyHtml: BODY, userCss: '/* </style><script>alert(1)</script> */' });
+  const html = buildHtml({
+    bodyHtml: BODY,
+    userCss: '/* </style><script>alert(1)</script> */',
+    options: createDocumentOptions(),
+  });
   assert.ok(!html.includes('</style><script>'));
 });
 
