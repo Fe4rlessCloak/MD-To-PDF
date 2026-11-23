@@ -21,6 +21,10 @@
 import { readFileSync } from 'node:fs';
 import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
 import { stylesheetPayload } from './print-styles/print-styles.js';
+import {
+  MERMAID_STYLESHEET_NAME,
+  mermaidStylesheetSource,
+} from './mermaid-styles/mermaid-styles.js';
 import { pageGeometry, DEFAULT_PAGE_GEOMETRY } from './page-geometry.js';
 import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
@@ -167,10 +171,22 @@ await runKatexBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 export function buildHtml({ bodyHtml, userCss, options = {}, page = DEFAULT_PAGE_GEOMETRY }) {
   const title = options.title ?? null;
 
-  // Emitted in the order the print-styles module returns: base, user CSS,
-  // containment, math. The order is the contract, not an implementation
-  // detail — see `stylesheetPayload`.
-  const layers = stylesheetPayload({ userCss });
+  // The shared Mermaid block is its own layer, spliced in directly after the
+  // base stylesheet: it is a default a theme's palette adjusts, and the
+  // containment and math rules must still outrank it. It is not part of
+  // `PRINT_STYLESHEET_NAMES` because that list is the print stylesheets'
+  // interface, and this block is Mermaid styling, not pagination.
+  //
+  // Emission order is the contract, not an implementation detail — see
+  // `stylesheetPayload`. Layer order is therefore:
+  //   base → mermaid-styles → user → containment → math → page-geometry
+  const layers = [];
+  for (const layer of stylesheetPayload({ userCss })) {
+    layers.push(layer);
+    if (layer.name === 'base') {
+      layers.push({ name: MERMAID_STYLESHEET_NAME, css: mermaidStylesheetSource() });
+    }
+  }
 
   // Page geometry is appended after every print layer. It carries no other
   // rules, so the contract above is unaffected, and emitting it last means the

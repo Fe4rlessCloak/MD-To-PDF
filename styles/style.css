@@ -3,12 +3,27 @@
    Designed for WeasyPrint (HTML+CSS → PDF)
    ============================================================ */
 
-/* --- PAGE GEOMETRY --- */
-/* Margins, page size, sheet background and the printed page number are owned
-   by src/core/page-geometry.js. A theme supplies values only, as variables,
-   and never declares an @page rule: that is what makes a margin correction a
-   single edit instead of five. */
+/* --- TOKENS --- */
 :root {
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values.
+       This is the light default, so the values are Mermaid's own: a diagram
+       here should look like a diagram, not like this theme repainted it. It
+       therefore omits the paint opt-ins the other four themes set (shape
+       stroke, line, fill) and keeps Mermaid's own palette, and it omits the
+       label-normalisation opt-in for the same reason — see the opt-in note in
+       `src/core/mermaid-bootstrap.js`. */
+    --mermaid-ink: #333333;
+    --mermaid-ink-on-shape: #333333;
+    --mermaid-label-font: 'trebuchet ms', verdana, arial, sans-serif;
+    --mermaid-label-weight: 400;
+    --mermaid-shape-stroke-width: 1px;
+
+    /* --- PAGE GEOMETRY --- */
+    /* Margins, page size, sheet background and the printed page number are
+       owned by src/core/page-geometry.js. A theme supplies values only, as
+       variables, and never declares an @page rule: that is what makes a
+       margin correction a single edit instead of five. */
     --page-margin: 2cm 2.2cm;
 }
 

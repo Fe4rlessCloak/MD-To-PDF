@@ -19,6 +19,18 @@
     --rule:      #000000;
     --code-bg:   #f0f0f0;
 
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values.
+       Maximum contrast: black ink, black outlines, and a heavier rule weight
+       than the other themes. */
+    --mermaid-ink: #000000;
+    --mermaid-ink-on-shape: #000000;
+    --mermaid-shape-stroke: var(--rule);
+    --mermaid-shape-stroke-width: 2px;
+    --mermaid-line: var(--rule);
+    --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mermaid-label-weight: 600;
+
     /* Page geometry values only; the @page rule is owned by
        src/core/page-geometry.js. This theme's page number is heavier and
        black to meet its maximum-contrast brief. */
@@ -277,54 +289,4 @@ pre {
 /* --- COVER HIDE ON INNER PAGES --- */
 .content {
     break-before: page;
-}
-
-/* --- MERMAID (maximum-contrast ink and strokes) --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-.mermaid svg .node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: var(--rule) !important;
-    stroke-width: 2px;
-}
-
-.mermaid svg .path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .loopLine {
-    stroke: var(--rule) !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: var(--rule) !important;
-    stroke: var(--rule) !important;
-}
-
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .noteText {
-    fill: var(--ink) !important;
-    color: var(--ink) !important;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-weight: 600;
 }
