@@ -18,8 +18,10 @@ import { READINESS_FLAGS, readinessFlagsSource } from '../src/core/readiness-pro
 const CORE = new URL('../src/core/', import.meta.url);
 const sourceOf = (file) => readFile(new URL(file, CORE), 'utf8');
 
-// Independent source of truth: the six names the pipeline has always used,
-// as recorded by the ticket. If the module drifts from this, that is a bug.
+/**
+ * Independent source of truth: the six names the pipeline has always used,
+ * as recorded by the ticket. If the module drifts from this, that is a bug.
+ */
 const EXPECTED_NAMES = {
   mermaidReady: '__MERMAID_READY__',
   mermaidErrors: '__MERMAID_ERRORS__',
@@ -67,11 +69,24 @@ test('readinessFlagsSource exposes the whole protocol to the injected program', 
 });
 
 test('the injected program references flags only through the protocol', async () => {
-  const source = await sourceOf('build-html.js');
-  const keys = referencedKeys(source, 'RF');
+  const program = await sourceOf('mermaid-bootstrap.js');
+  const keys = referencedKeys(program, 'flags');
 
-  assert.deepEqual(hardcodedGlobals(source), [], 'build-html.js must not hardcode readiness globals');
-  assert.deepEqual(keys, Object.keys(EXPECTED_NAMES).sort());
+  assert.deepEqual(hardcodedGlobals(program), [], 'the program must not hardcode readiness globals');
+  assert.ok(keys.length > 0, 'the program must publish flags through the handle it is given');
+
+  for (const key of keys) {
+    assert.ok(key in READINESS_FLAGS, `the program references unknown flag "${key}"`);
+  }
+
+  // Assembly owns the inlining and the handle: it must pass the protocol
+  // through, never spell a flag itself.
+  const assembly = await sourceOf('build-html.js');
+  assert.deepEqual(hardcodedGlobals(assembly), [], 'build-html.js must not hardcode readiness globals');
+  assert.ok(
+    assembly.includes('flags: RF'),
+    'assembly must hand the protocol to the injected program',
+  );
 });
 
 test('the renderer references flags only through the protocol', async () => {
@@ -87,7 +102,10 @@ test('the renderer references flags only through the protocol', async () => {
 });
 
 test('every flag the renderer reads is published by the injected program', async () => {
-  const published = new Set(referencedKeys(await sourceOf('build-html.js'), 'RF'));
+  const published = new Set([
+    ...referencedKeys(await sourceOf('mermaid-bootstrap.js'), 'flags'),
+    ...referencedKeys(await sourceOf('build-html.js'), 'RF'),
+  ]);
   const polled = referencedKeys(await sourceOf('render-pdf.js'), 'READINESS_FLAGS');
 
   const orphans = polled.filter((key) => !published.has(key));

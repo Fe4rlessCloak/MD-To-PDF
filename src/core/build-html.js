@@ -1,9 +1,15 @@
 /**
  * @file Assemble the final HTML document from rendered Markdown content,
  * injected user CSS, Mermaid runtime bootstrap, and KaTeX math rendering.
+ *
+ * The Mermaid browser program is a real module (`mermaid-bootstrap.js`).
+ * Assembly inlines that module's source text into a `<script type="module">`
+ * and calls its entry point, so the document stays a single self-contained
+ * file with no second fetch while tests can import the same code.
  */
 
-import { readinessFlagsSource } from './readiness-protocol.js';
+import { readFileSync } from 'node:fs';
+import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
 
 /**
  * Injected declaration of the readiness protocol. Each bootstrap script is a
@@ -11,6 +17,43 @@ import { readinessFlagsSource } from './readiness-protocol.js';
  * global; the names themselves come from the protocol module.
  */
 const READINESS_SOURCE = readinessFlagsSource();
+
+/** Location of the Mermaid browser program that assembly inlines. */
+const MERMAID_PROGRAM_URL = new URL('./mermaid-bootstrap.js', import.meta.url);
+
+/** Cached program text; read once, since every document inlines the same code. */
+let mermaidProgramSource = null;
+
+/**
+ * Source text of the Mermaid browser program.
+ *
+ * Exported so tests can assert against the real program rather than a copy of
+ * it, and so a caller can see exactly what assembly will inline.
+ *
+ * @returns {string} The program's ESM source.
+ */
+export function mermaidBootstrapSource() {
+  if (mermaidProgramSource === null) {
+    mermaidProgramSource = readFileSync(MERMAID_PROGRAM_URL, 'utf8');
+  }
+  return mermaidProgramSource;
+}
+
+/**
+ * Neutralise a closing-tag sequence so inlined text cannot end its element.
+ *
+ * Escaping the slash keeps the sequence inert to the HTML parser while
+ * leaving it syntactically valid to the language doing the parsing: `<\/style`
+ * is still a legal CSS comment terminator and `<\/script` is still a legal
+ * string in JavaScript, so neither the stylesheet nor the program is damaged.
+ *
+ * @param {string} source  Text to inline.
+ * @param {'style'|'script'} tagName  Element the text is going into.
+ * @returns {string}
+ */
+export function neutralizeClosingTag(source, tagName) {
+  return source.replace(new RegExp(`</(${tagName})`, 'gi'), (_, matched) => `<\\/${matched}`);
+}
 
 /**
  * Default base stylesheet — provides safe print defaults.
@@ -79,121 +122,32 @@ const KATEX_CSS = `
 `;
 
 /**
- * Mermaid client-side bootstrap script.
- * Uses `theme: 'base'` so diagrams inherit fonts and CSS variables.
- * Sets `startOnLoad: false` so we can manually trigger rendering and
- * signal completion via a global flag.
+ * The Mermaid bootstrap `<script>` element.
+ *
+ * This is the production adapter over `mermaid-bootstrap.js`: the module's
+ * source text is inlined, then its entry point is called with the protocol and
+ * the fatal sentinel. Top-level await is what makes the inlined program's
+ * asynchronous work — the runtime load, then every diagram — complete before
+ * the enclosing module script does, exactly as when the program was written
+ * inline in a template literal.
+ *
+ * `RF` and the fatal index are passed in rather than read from a global, so
+ * the program never depends on the spelling of a flag.
+ *
+ * @returns {string} A complete `<script type="module">` element.
  */
-const MERMAID_BOOTSTRAP = `
+function mermaidBootstrapScript() {
+  const program = neutralizeClosingTag(mermaidBootstrapSource(), 'script');
+
+  return `
 <script type="module">
 ${READINESS_SOURCE}
-let resolveMermaidReady;
-window[RF.mermaidReady] = new Promise((resolve) => {
-  resolveMermaidReady = resolve;
-});
-window[RF.mermaidErrors] = [];
-window[RF.mermaidDebug] = [];
+${program}
 
-function isDarkColor(color) {
-  const m = color && color.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
-  if (!m) return false;
-  const luminance = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
-  return luminance < 128;
-}
-
-try {
-  const nodes = document.querySelectorAll('.mermaid');
-  if (nodes.length > 0) {
-    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
-
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      securityLevel: 'loose',
-      suppressErrorRendering: true,
-      flowchart: {
-        htmlLabels: false,
-      },
-      sequence: {
-        useMaxWidth: true,
-        htmlLabels: false,
-      },
-      gantt: {
-        useMaxWidth: true,
-      },
-    });
-
-    // Render each diagram independently so one broken diagram cannot take
-    // down the whole document. Failures become a visible error placeholder
-    // and are reported in the protocol's error flag for the PDF step.
-    for (const [index, node] of nodes.entries()) {
-      try {
-        const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
-        node.innerHTML = svg;
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        window[RF.mermaidErrors].push({ index, error: message });
-        document.getElementById('dmermaid-' + index)?.remove();
-        node.textContent = 'Mermaid diagram failed to render: ' + message;
-      }
-    }
-
-    // Optionally strip Mermaid's inline text-colour overrides so the active
-    // theme's stylesheet governs label text. Mermaid compiles style
-    // directives (color) into inline !important declarations, which outrank
-    // any stylesheet rule (even !important ones). Author fill colours are
-    // left intact, and dark author fills receive light text for contrast.
-    const normalize = getComputedStyle(document.documentElement)
-      .getPropertyValue('--mermaid-normalize')
-      .trim();
-    if (normalize) {
-      document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
-        el.style.removeProperty('color');
-      });
-      document.querySelectorAll('.mermaid svg .node').forEach((node) => {
-        const shape = node.querySelector('.label-container, rect, circle, ellipse, polygon, path');
-        if (shape && isDarkColor(getComputedStyle(shape).fill)) {
-          node.querySelectorAll('text, tspan, .label, .nodeLabel').forEach((label) => {
-            label.style.setProperty('fill', '#ffffff', 'important');
-            label.style.setProperty('color', '#ffffff', 'important');
-          });
-        }
-      });
-    }
-
-    // Emit basic render diagnostics for print-layout debugging.
-    window[RF.mermaidDebug] = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
-      const svg = node.querySelector('svg');
-      const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
-      const nodeRect = node.getBoundingClientRect();
-      const svgRect = svg ? svg.getBoundingClientRect() : null;
-
-      return {
-        index,
-        foreignObjects,
-        container: {
-          width: nodeRect.width,
-          height: nodeRect.height,
-        },
-        svg: svgRect
-          ? {
-              width: svgRect.width,
-              height: svgRect.height,
-            }
-          : null,
-      };
-    });
-  }
-} catch (err) {
-  const message = err && err.message ? err.message : String(err);
-  window[RF.mermaidErrors].push({ index: -1, error: message });
-} finally {
-  // Signal that rendering is complete so KaTeX and Puppeteer can proceed.
-  window[RF.mermaidRenderDone] = true;
-  resolveMermaidReady();
-}
+await runMermaidBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 </script>
 `;
+}
 
 /**
  * KaTeX client-side bootstrap script.
@@ -278,8 +232,10 @@ export function buildHtml({ bodyHtml, userCss, options = {} }) {
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">';
 
   const styleTag = stylesheets
-    .map((css) => `<style>\n${css.trim().replace(/<\/style/gi, '<\\/style')}\n</style>`)
+    .map((css) => `<style>\n${neutralizeClosingTag(css.trim(), 'style')}\n</style>`)
     .join('\n');
+
+  const mermaidScript = mermaidBootstrapScript();
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -292,7 +248,7 @@ ${styleTag}
 </head>
 <body>
 ${bodyHtml}
-${MERMAID_BOOTSTRAP}
+${mermaidScript}
 ${KATEX_BOOTSTRAP}
 </body>
 </html>`;
