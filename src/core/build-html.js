@@ -18,6 +18,10 @@
 import { readFileSync } from 'node:fs';
 import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
 import { stylesheetPayload } from './print-styles/print-styles.js';
+import {
+  MERMAID_STYLESHEET_NAME,
+  mermaidStylesheetSource,
+} from './mermaid-styles/mermaid-styles.js';
 import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
 /**
@@ -161,10 +165,20 @@ await runKatexBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 export function buildHtml({ bodyHtml, userCss, options = {} }) {
   const title = options.title ?? null;
 
-  // Emitted in the order the print-styles module returns: base, user CSS,
-  // containment, math. The order is the contract, not an implementation
-  // detail — see `stylesheetPayload`.
-  const styleTag = stylesheetPayload({ userCss })
+  // The shared Mermaid block is its own layer, spliced in directly after the
+  // base stylesheet: it is a default a theme's palette adjusts, and the
+  // containment and math rules must still outrank it. It is not part of
+  // `PRINT_STYLESHEET_NAMES` because that list is the print stylesheets'
+  // interface, and this block is Mermaid styling, not pagination.
+  const layers = [];
+  for (const layer of stylesheetPayload({ userCss })) {
+    layers.push(layer);
+    if (layer.name === 'base') {
+      layers.push({ name: MERMAID_STYLESHEET_NAME, css: mermaidStylesheetSource() });
+    }
+  }
+
+  const styleTag = layers
     .map((layer) => `<style>\n${neutralizeClosingTag(layer.css.trim(), 'style')}\n</style>`)
     .join('\n');
 

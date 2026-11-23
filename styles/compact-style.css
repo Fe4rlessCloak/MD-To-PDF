@@ -21,6 +21,16 @@
     --code-ink:  #08423e;
     --diagram-line: #5a6b69;
     --diagram-edge: #a9b7b5;
+
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values. */
+    --mermaid-ink: #1a1a1a;
+    --mermaid-ink-on-shape: #1a1a1a;
+    --mermaid-shape-stroke: var(--diagram-edge);
+    --mermaid-shape-stroke-width: 1px;
+    --mermaid-line: var(--diagram-line);
+    --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mermaid-label-weight: 400;
 }
 
 /* --- PAGE SETUP --- */
@@ -331,53 +341,4 @@ pre {
 /* --- COVER HIDE ON INNER PAGES --- */
 .content {
     break-before: page;
-}
-
-/* --- MERMAID (theme-controlled, fills left to the author) --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-.mermaid svg .node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: var(--diagram-edge) !important;
-    stroke-width: 1px;
-}
-
-.mermaid svg .path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .loopLine {
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: var(--diagram-line) !important;
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .noteText {
-    fill: var(--ink) !important;
-    color: var(--ink) !important;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

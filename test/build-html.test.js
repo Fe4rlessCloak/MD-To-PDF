@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildHtml, mermaidBootstrapSource, katexBootstrapSource, neutralizeClosingTag } from '../src/core/build-html.js';
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
+import { printStylesheetSource } from '../src/core/print-styles/print-styles.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
 
 const BODY = '<p>Hello <strong>world</strong></p>';
@@ -53,7 +54,15 @@ test('places user CSS before the Mermaid containment styles', () => {
     userCss: USER_CSS,
     options: createDocumentOptions(),
   });
-  assert.ok(html.indexOf(USER_CSS) < html.indexOf('.mermaid svg'));
+
+  // Assert against the containment layer's own text, not a selector that now
+  // also appears in the shared Mermaid block emitted before user CSS. The
+  // contract is that the containment rules outrank user CSS, so they must be
+  // emitted after it.
+  const containment = printStylesheetSource('mermaid-containment');
+  const containmentRule = containment.slice(containment.indexOf('.mermaid svg {'));
+
+  assert.ok(html.indexOf(USER_CSS) < html.indexOf(containmentRule));
 });
 
 test('includes both bootstrap scripts and the protocol they publish through', () => {
@@ -276,10 +285,17 @@ test('neutralizes closing style tags inside userCss', () => {
   assert.ok(!html.includes('</style><script>'));
 });
 
-test('oled stylesheet preserves element backgrounds and uses light ink on canvas Mermaid labels', async () => {
+test('oled supplies a palette and leaves the Mermaid selectors to the shared block', async () => {
   const oled = await readFile(new URL('../styles/oled-style.css', import.meta.url), 'utf-8');
-  assert.ok(!oled.match(/^div,\s*$/m));
-  assert.ok(oled.includes('.mermaid svg .messageText'));
-  assert.ok(oled.includes('fill: #f0f2ff !important'));
-  assert.ok(oled.includes('.mermaid svg .node path'));
+
+  // This test used to assert the opposite — that oled carried `.mermaid svg
+  // .messageText`, `.node path` and a literal `fill: #f0f2ff !important`. That
+  // was the drift: 69 selectors and 24 !important declarations restating the
+  // shared block. Its divergence is now a palette, so assert the palette.
+  assert.ok(!oled.match(/^div,\s*$/m), 'oled must not blanket-reset div backgrounds');
+  assert.match(oled, /--mermaid-ink:\s*#f0f2ff;/, 'canvas ink is the near-white');
+  assert.match(oled, /--mermaid-ink-on-shape:\s*#111111;/, 'shape ink is dark, on light fills');
+  assert.match(oled, /--mermaid-line:\s*#f5f7ff;/, 'edges and lifelines are near-white');
+  assert.match(oled, /--mermaid-shape-fill:/, 'the dark theme opts in to a shape fill');
+  assert.ok(!oled.includes('.mermaid svg'), 'no selector list of its own');
 });

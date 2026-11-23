@@ -1,0 +1,244 @@
+/*
+ * The shared Mermaid styling block.
+ *
+ * Every rule that targets Mermaid's generated DOM lives here, once. It was
+ * previously restated in four themes, one of which had drifted to more than
+ * double the selectors and `!important` declarations of the others. A theme now
+ * supplies a palette and nothing else: see `MERMAID_VARIABLES` in
+ * `mermaid-styles.js` for the names a theme defines.
+ *
+ * Four things about this file are deliberate and load-bearing.
+ *
+ * 1. `!important` is necessary, not decorative. Mermaid writes colour
+ *    directives from `style` statements into inline `!important` declarations,
+ *    which outrank every stylesheet rule. The Mermaid bootstrap compensates:
+ *    under `--mermaid-normalize` it removes those inline colours before these
+ *    rules are read back. Author *fills* are left intact on purpose, which is
+ *    why the fill override below is opt-in rather than unconditional.
+ *
+ * 2. Ink and type are unconditional; paint is opt-in. Every theme needs Text
+ *    that is readable on the surface it sits on, so the ink rules are always
+ *    on. Repainting Mermaid's own strokes, edges and fills is a different
+ *    proposition: on a light page Mermaid's palette is already correct, and
+ *    the light default theme keeps it. Gating paint behind a style query is
+ *    what lets that theme opt out without opting out of the separator list.
+ *
+ * 3. A style query matches a custom property whose value the element inherits,
+ *    and it fails closed: a theme that does not define the variable leaves the
+ *    rule inert. That is what makes the gating above possible, and it is also
+ *    how the dark theme's divergence is expressed — as a variable, never as a
+ *    copy of this selector list. The query needs no `container-type`
+ *    declaration, and none appears here: `container-type: style` is not a
+ *    valid value in the Chromium this project renders with, so such a
+ *    declaration would be dropped, while `inline-size` would create a real
+ *    container and change which element the query resolves against.
+ *
+ * 4. Ink is split by surface. Text on bare canvas (sequence messages, loop and
+ *    edge labels) needs the canvas ink; text inside a filled shape needs the
+ *    shape ink. Collapsing the two is what produced the dark theme's
+ *    unreadable labels, where light canvas ink landed inside light-filled
+ *    boxes.
+ */
+
+/* --- The canvas --------------------------------------------------------- */
+
+.mermaid svg {
+  background: transparent !important;
+}
+
+/* --- Ink and type ------------------------------------------------------- */
+
+/*
+ * Type and canvas ink for text drawn straight onto the page surface.
+ *
+ * The autonumber badge (`.sequenceNumber`) gets the theme's ink but not its
+ * typeface: Mermaid draws it at a fixed 12px inside a fixed-size marker, and
+ * the badge's metrics belong to that marker rather than to the document's
+ * typography. Swapping the face moves the numeral without improving it.
+ */
+.mermaid svg text,
+.mermaid svg tspan,
+.mermaid svg .label,
+.mermaid svg .edgeLabel,
+.mermaid svg .nodeLabel,
+.mermaid svg .messageText,
+.mermaid svg .loopText,
+.mermaid svg .labelText,
+.mermaid svg .noteText {
+  font-family: var(--mermaid-label-font);
+  font-weight: var(--mermaid-label-weight);
+}
+
+.mermaid svg text,
+.mermaid svg tspan,
+.mermaid svg .label,
+.mermaid svg .edgeLabel,
+.mermaid svg .messageText,
+.mermaid svg .loopText,
+.mermaid svg .labelText,
+.mermaid svg .sequenceNumber {
+  fill: var(--mermaid-ink) !important;
+  color: var(--mermaid-ink) !important;
+}
+
+/*
+ * Shape ink after canvas ink, so a label inside a shape wins on source order
+ * where both match. `text.actor` and `text.note` are siblings of the shapes
+ * they sit on rather than children of them, which is why the element selectors
+ * are stated as well as the class ones.
+ */
+.mermaid svg .nodeLabel,
+.mermaid svg .noteText,
+.mermaid svg .node text,
+.mermaid svg .node tspan,
+.mermaid svg .actor text,
+.mermaid svg .actor tspan,
+.mermaid svg .note text,
+.mermaid svg .note tspan,
+.mermaid svg .labelBox text,
+.mermaid svg .labelBox tspan,
+.mermaid svg .cluster .cluster-label text,
+.mermaid svg .cluster .cluster-label tspan {
+  fill: var(--mermaid-ink-on-shape) !important;
+  color: var(--mermaid-ink-on-shape) !important;
+  font-weight: var(--mermaid-label-weight);
+}
+
+/* --- Shape outlines (opt-in) -------------------------------------------- */
+
+/*
+ * A theme opts in by defining the stroke variable. The light default does not:
+ * Mermaid's own outlines are right there, and it also distinguishes a state's
+ * start marker from an ordinary node, which a single stroke colour cannot.
+ *
+ * The weight is unconditional while the colour is opt-in, because the weight
+ * is per-theme typographic intent (the high-contrast theme wants a heavier
+ * rule) and is inert without a stroke to widen.
+ */
+.mermaid svg .node rect,
+.mermaid svg .node circle,
+.mermaid svg .node ellipse,
+.mermaid svg .node polygon,
+.mermaid svg .node path,
+.mermaid svg .actor,
+.mermaid svg .note,
+.mermaid svg .labelBox,
+.mermaid svg .cluster rect {
+  stroke-width: var(--mermaid-shape-stroke-width);
+}
+
+/*
+ * The plate Mermaid puts behind a node's text is a transparent overlay on top
+ * of the shape, not a shape of its own. It matches `.node rect` like any other
+ * rectangle, so a theme that paints shape fills would paint this one too — a
+ * second, offset plate inside every node. The reset therefore belongs to the
+ * fill opt-in rather than to this block: the light default never paints fills,
+ * and Mermaid already leaves the plate transparent there.
+ */
+@container style(--mermaid-shape-fill) {
+  .mermaid svg .node .label > rect {
+    fill: transparent !important;
+    stroke: none !important;
+  }
+}
+
+@container style(--mermaid-shape-stroke) {
+  .mermaid svg .node rect,
+  .mermaid svg .node circle,
+  .mermaid svg .node ellipse,
+  .mermaid svg .node polygon,
+  .mermaid svg .node path,
+  .mermaid svg .actor,
+  .mermaid svg .note,
+  .mermaid svg .labelBox,
+  .mermaid svg .cluster rect,
+  .mermaid svg circle {
+    stroke: var(--mermaid-shape-stroke) !important;
+  }
+}
+
+/* --- Shape fills (opt-in) ----------------------------------------------- */
+
+/*
+ * Mermaid's node fill is pale by design. That is correct on white and wrong on
+ * black, where it becomes a glare patch, so a dark theme paints it. Supplying
+ * the variable is the whole opt-in; the light themes omit it and keep
+ * Mermaid's per-diagram-type fills, which differ between a flowchart node, a
+ * mindmap node and a note.
+ */
+@container style(--mermaid-shape-fill) {
+  .mermaid svg .node rect,
+  .mermaid svg .node circle,
+  .mermaid svg .node ellipse,
+  .mermaid svg .node polygon,
+  .mermaid svg .node path,
+  .mermaid svg .actor,
+  .mermaid svg .note,
+  .mermaid svg .labelBox,
+  .mermaid svg .cluster rect {
+    fill: var(--mermaid-shape-fill) !important;
+  }
+}
+
+/* --- Edges, arrows and frames (opt-in) ---------------------------------- */
+
+/*
+ * Same reasoning as outlines, and it matters more here: Mermaid draws a
+ * lifeline in a different weight and tone from a flowchart edge, and a theme
+ * that wants one edge colour for both says so by defining the variable.
+ */
+@container style(--mermaid-line) {
+  /*
+   * Class-based selectors cover the edges Mermaid names; the bare element
+   * selectors cover the primitives it does not. Several diagram families draw
+   * plain `<line>` and `<path>` frames with no class at all, and a theme that
+   * sets an edge colour for a black page needs those too — on white they were
+   * legible by default because black-on-white is already correct.
+   */
+  .mermaid svg .path,
+  .mermaid svg .flowchart-link,
+  .mermaid svg .messageLine0,
+  .mermaid svg .messageLine1,
+  .mermaid svg .actor-line,
+  .mermaid svg .loopLine,
+  .mermaid svg line,
+  .mermaid svg path,
+  .mermaid svg polygon {
+    stroke: var(--mermaid-line) !important;
+  }
+
+  .mermaid svg marker path,
+  .mermaid svg .marker,
+  .mermaid svg .arrowheadPath {
+    fill: var(--mermaid-line) !important;
+    stroke: var(--mermaid-line) !important;
+  }
+}
+
+/* --- Edge-label plates (opt-in) ----------------------------------------- */
+
+/*
+ * An edge label sits on the canvas and crosses edges. On a dark page it needs
+ * an opaque plate or the line strikes through the text; on a light page
+ * Mermaid's own chip is correct.
+ */
+@container style(--mermaid-edge-label-bg) {
+  .mermaid svg .edgeLabel rect,
+  .mermaid svg .edgeLabel .background,
+  .mermaid svg .edgeLabel .labelBkg {
+    fill: var(--mermaid-edge-label-bg) !important;
+    background: var(--mermaid-edge-label-bg) !important;
+    stroke: none !important;
+  }
+}
+
+/* --- HTML labels -------------------------------------------------------- */
+
+/*
+ * `htmlLabels: false` keeps text in real SVG text nodes, but Mermaid still
+ * emits `foreignObject` wrappers in some diagram families. They must stay
+ * transparent, or the wrapper paints a white plate behind light ink.
+ */
+.mermaid svg foreignObject {
+  background: transparent !important;
+}
