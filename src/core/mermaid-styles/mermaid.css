@@ -69,16 +69,33 @@
   font-weight: var(--mermaid-label-weight);
 }
 
-.mermaid svg text,
-.mermaid svg tspan,
+.mermaid svg text:not(.sequenceNumber),
+.mermaid svg tspan:not(.sequenceNumber),
 .mermaid svg .label,
 .mermaid svg .edgeLabel,
 .mermaid svg .messageText,
 .mermaid svg .loopText,
-.mermaid svg .labelText,
-.mermaid svg .sequenceNumber {
+.mermaid svg .labelText {
   fill: var(--mermaid-ink) !important;
   color: var(--mermaid-ink) !important;
+}
+
+/*
+ * The autonumber badge is a numeral on a filled disc, so it needs whatever ink
+ * contrasts with that disc — which is not the canvas ink and not necessarily
+ * the on-shape ink either. Mermaid draws the disc dark whatever the theme, so
+ * leaving this unset keeps Mermaid's own white numeral, which is correct on
+ * every theme here. A theme that repaints the disc sets the variable.
+ *
+ * Two mistakes this replaced: forcing canvas ink erased the numeral on the
+ * light themes, and gating on the fill opt-in erased it on the dark theme,
+ * where the disc stays dark but the on-shape ink is dark too.
+ */
+@container style(--mermaid-badge-ink) {
+  .mermaid svg .sequenceNumber {
+    fill: var(--mermaid-badge-ink) !important;
+    color: var(--mermaid-badge-ink) !important;
+  }
 }
 
 /*
@@ -151,8 +168,27 @@
   .mermaid svg .actor,
   .mermaid svg .note,
   .mermaid svg .labelBox,
-  .mermaid svg .cluster rect,
-  .mermaid svg circle {
+  .mermaid svg .cluster rect {
+    stroke: var(--mermaid-shape-stroke) !important;
+  }
+}
+
+/*
+ * Unclassed primitives (bare `circle`, `ellipse`, `polygon.label-container`)
+ * are stroked only by a theme that also paints fills. That is not a
+ * convenience: on the light themes Mermaid's own autonumber badge is a bare
+ * `<circle>` with no class, and stroking it repaints a marker Mermaid
+ * deliberately draws in the text ink. The dark theme is where these
+ * primitives genuinely need the outline — it repaints every shape, so leaving
+ * one family on Mermaid's default grey would be visible — so the scope
+ * belongs to the fill opt-in, which is exactly the distinction between a
+ * theme that paints shapes and one that leaves them alone.
+ */
+@container style(--mermaid-shape-fill) {
+  .mermaid svg circle,
+  .mermaid svg ellipse,
+  .mermaid svg rect:not(.background):not(.label-container),
+  .mermaid svg polygon.label-container {
     stroke: var(--mermaid-shape-stroke) !important;
   }
 }

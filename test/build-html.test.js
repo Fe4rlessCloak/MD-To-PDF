@@ -154,14 +154,30 @@ test('the inlined program carries the theme opt-in, and the themes honour it', a
   assert.ok(!light.includes('--mermaid-normalize'));
 });
 
-test('base CSS provides an @page margin fallback before user CSS', () => {
+test('the page rule comes from the geometry module, after every print layer', () => {
   const html = buildHtml({
     bodyHtml: BODY,
     userCss: USER_CSS,
     options: createDocumentOptions(),
   });
-  assert.match(html, /@page\s*\{[^}]*margin:/);
-  assert.ok(html.indexOf('@page') < html.indexOf(USER_CSS));
+
+  const rule = html.match(/@page\s*\{[\s\S]*?\n\}/);
+  assert.ok(rule, 'the document must carry a page rule');
+  // The rule is fed by theme variables, which is what lets a theme supply
+  // geometry without declaring a rule.
+  assert.match(rule[0], /var\(--page-margin/);
+
+  // Emitted last, so no print layer or theme can override it. Anchored on the
+  // rule itself, not the string `@page`, which also appears in a comment.
+  assert.ok(
+    html.lastIndexOf('@page {') > html.indexOf('.math-display'),
+    'the page rule must follow containment and math',
+  );
+});
+
+test('assembly emits exactly one page rule', () => {
+  const html = withOptions();
+  assert.equal((html.match(/@page\s*\{/g) ?? []).length, 1);
 });
 
 test('assembly inlines the Mermaid program so the document needs no second fetch', async () => {

@@ -6,9 +6,11 @@
  * live in `mermaid-containment.css`, which is emitted after user CSS precisely
  * so user CSS cannot override them.
  *
- * The @page margin is a fallback for a document rendered without a theme. Page
- * geometry proper is owned elsewhere; this only keeps an unthemed document
- * printable.
+ * Deliberately declares no `@page` rule. Page geometry — size, margin, sheet
+ * background, the printed page number and the browser's print preference — is
+ * owned by `src/core/page-geometry.js`, which emits the rule once. A fallback
+ * rule here would be a second declaration of the same thing, which is exactly
+ * the fault that module exists to remove.
  */
 * {
   box-sizing: border-box;
@@ -20,7 +22,4 @@ body {
   color: #222;
   margin: 0;
   padding: 0;
-}
-@page {
-  margin: 2cm 2.2cm;
 }

@@ -36,26 +36,13 @@
     --mermaid-line: var(--diagram-line);
     --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     --mermaid-label-weight: 400;
-}
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 2.4cm 2.6cm;
-    background: #f6efe1;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 9pt;
-        color: #5b4a3a;
-    }
-}
-
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
+    /* Page geometry values only; the @page rule is owned by
+       src/core/page-geometry.js. The sheet and page number are tinted to
+       match the paper surface. */
+    --page-margin: 2.4cm 2.6cm;
+    --page-background: #f6efe1;
+    --page-footer-color: #5b4a3a;
 }
 
 /* --- BODY --- */
@@ -66,67 +53,6 @@ body {
     color: var(--ink);
     background: var(--paper);
     counter-reset: h2-counter;
-}
-
-/* --- COVER PAGE --- */
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #3a2c1e;
-    color: var(--paper);
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 28pt;
-    font-weight: 700;
-    margin: 0 0 0.5em 0;
-    color: var(--paper);
-    letter-spacing: 0.5px;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 16pt;
-    font-weight: 400;
-    margin: 0 0 1.5em 0;
-    opacity: 0.9;
-}
-
-.cover .meta {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 11pt;
-    opacity: 0.8;
-    margin-top: 1em;
-    line-height: 1.8;
-}
-
-.cover .divider {
-    width: 60px;
-    height: 3px;
-    background: #c98b4b;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: rgba(201, 139, 75, 0.18);
-    border: 1px solid #c98b4b;
-    border-radius: 4px;
-    padding: 6px 16px;
-    font-size: 10pt;
-    color: #e8bd88;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
