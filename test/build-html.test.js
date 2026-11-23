@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { buildHtml } from '../src/core/build-html.js';
+import { buildHtml, mermaidBootstrapSource, neutralizeClosingTag } from '../src/core/build-html.js';
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
 
@@ -56,15 +56,22 @@ test('places user CSS before the Mermaid containment styles', () => {
   assert.ok(html.indexOf(USER_CSS) < html.indexOf('.mermaid svg'));
 });
 
-test('includes both bootstrap scripts and completion flags', () => {
+test('includes both bootstrap scripts and the protocol they publish through', () => {
   const html = withOptions();
   assert.ok(html.includes('mermaid.esm.min.mjs'));
   assert.ok(html.includes('katex.mjs'));
-  // Flag names are owned by the readiness protocol; assert the reference the
-  // bootstraps actually make, and that the protocol is inlined for them.
+  // Flag names are owned by the readiness protocol; assert the protocol is
+  // inlined for both bootstraps, and that each one is wired to it.
   assert.ok(html.includes(readinessFlagsSource()));
-  assert.ok(html.includes(`window[RF.mermaidRenderDone] = true`));
   assert.ok(html.includes(`window[RF.mathRenderDone] = true`));
+  // The Mermaid program is a module now, so assembly inlines its source and
+  // calls its entry point with the protocol handle rather than owning the
+  // publication itself.
+  assert.ok(html.includes(mermaidBootstrapSource().trim()), 'assembly must inline the program');
+  assert.ok(
+    html.includes('runMermaidBootstrap({ flags: RF, fatalReportIndex: '),
+    'assembly must call the program with the protocol',
+  );
 });
 
 test('includes the KaTeX stylesheet link', () => {
@@ -107,8 +114,11 @@ test('ignores options that only concern the CLI, without a call-site change', ()
   assert.ok(!html.includes('theme.css'));
 });
 
-test('bootstrap strips inline Mermaid text colours when a theme opts in', async () => {
+test('the inlined program carries the theme opt-in, and the themes honour it', async () => {
   const html = withOptions();
+  // The opt-in read lives in the program, which assembly inlines; the theme
+  // files are the other half of that cross-language contract. Behaviour of the
+  // read itself is covered in mermaid-bootstrap.test.js.
   assert.ok(html.includes('--mermaid-normalize'));
   assert.ok(html.includes("removeProperty('color')"));
 
@@ -141,11 +151,45 @@ test('base CSS provides an @page margin fallback before user CSS', () => {
   assert.ok(html.indexOf('@page') < html.indexOf(USER_CSS));
 });
 
-test('mermaid bootstrap renders diagrams per-node and always signals done', () => {
+test('assembly inlines the Mermaid program so the document needs no second fetch', async () => {
+  const { readFile } = await import('node:fs/promises');
   const html = withOptions();
-  assert.ok(html.includes('mermaid.render('));
-  assert.ok(html.includes('window[RF.mermaidErrors].push('));
-  assert.ok(html.includes('finally'));
+  const program = await readFile(
+    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
+    'utf-8',
+  );
+
+  // Every line of the program must appear in the document; the only runtime
+  // fetch left is the Mermaid CDN import inside the program itself.
+  for (const line of program.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('import ') || trimmed === 'export' ) continue;
+    assert.ok(html.includes(trimmed), `inlined program is missing: ${trimmed}`);
+  }
+
+  assert.equal(
+    (html.match(/mermaid\.esm\.min\.mjs/g) ?? []).length,
+    1,
+    'the runtime URL must appear once, in the inlined program',
+  );
+});
+
+test('the Mermaid program renders per-node and always signals done', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const program = await readFile(
+    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
+    'utf-8',
+  );
+
+  assert.ok(program.includes('mermaid.render('));
+  assert.ok(program.includes('finally'), 'completion must be published in a finally');
+  assert.ok(program.includes('view[flags.mermaidRenderDone] = true'));
+
+  const html = withOptions();
+  assert.ok(
+    html.includes(neutralizeClosingTag(program, 'script').trim()),
+    'the inlined program must be the same code, neutralised for the script element',
+  );
 });
 
 test('skips CDN module imports at runtime when no diagrams or math are present and avoids 25s race', () => {
@@ -156,6 +200,39 @@ test('skips CDN module imports at runtime when no diagrams or math are present a
   assert.ok(!html.includes('25000'));
   assert.ok(html.includes('window[RF.mathErrors]'));
   assert.ok(html.includes('el.textContent = raw'));
+});
+
+test('inlined program and stylesheets open exactly as many elements as they close', () => {
+  const html = withOptions();
+  const opens = (html.match(/<script\b/gi) ?? []).length;
+  const closes = (html.match(/<\/script/gi) ?? []).length;
+  assert.equal(opens, closes, 'every inlined script element must close exactly once');
+
+  const styleOpens = (html.match(/<style\b/gi) ?? []).length;
+  const styleCloses = (html.match(/<\/style/gi) ?? []).length;
+  assert.equal(styleOpens, styleCloses, 'every inlined stylesheet must close exactly once');
+});
+
+test('neutralising a closing tag leaves an inert sequence the language still accepts', () => {
+  // The inlining adapter's whole job, tested on the text it is given rather
+  // than on the current program, which happens to contain no closers today.
+  // Only the enclosing element's own closer can end it, so a stylesheet keeps
+  // `</script>` untouched — that sequence is inert inside `<style>`.
+  assert.equal(
+    neutralizeClosingTag('/* </style><script>alert(1)</script> */', 'style'),
+    '/* <\\/style><script>alert(1)</script> */',
+  );
+  assert.equal(neutralizeClosingTag('</SCRIPT>', 'script'), '<\\/SCRIPT>');
+  assert.equal(neutralizeClosingTag('no closers here', 'script'), 'no closers here');
+});
+
+test('a program that contains a closing script sequence cannot break out of its element', () => {
+  // Guards the seam, not today's program: if the inlined source ever gains a
+  // literal closer, assembly must neutralise it before it reaches the parser.
+  const hostile = 'const s = "</script><img src=x onerror=alert(1)>";';
+  const neutralised = neutralizeClosingTag(hostile, 'script');
+  assert.ok(!neutralised.includes('</script>'));
+  assert.equal((neutralised.match(/<\/script/gi) ?? []).length, 0);
 });
 
 test('neutralizes closing style tags inside userCss', () => {

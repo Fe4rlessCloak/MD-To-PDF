@@ -293,10 +293,15 @@ test('the assembled mixed document sequences math after Mermaid', async () => {
     'waiting for Mermaid must precede the first DOM mutation by KaTeX',
   );
 
-  // Mermaid signals completion before the KaTeX script can observe it.
+  // Mermaid signals completion before the KaTeX script can observe it. Both
+  // bootstraps are module scripts, so order is source order: a marker that is
+  // absent (-1) would satisfy a bare `indexOf(...) < indexOf(...)` comparison,
+  // so the position is asserted positively.
+  const mermaidDone = html.indexOf('view[flags.mermaidRenderDone] = true');
+  assert.ok(mermaidDone > -1, 'the Mermaid program must publish the completion flag');
   assert.ok(
-    html.indexOf('window[RF.mermaidRenderDone] = true') < katexScript,
-    'the Mermaid completion flag must be published before KaTeX runs',
+    mermaidDone < katexScript,
+    'the Mermaid program must be inlined before the KaTeX script runs',
   );
 });
 

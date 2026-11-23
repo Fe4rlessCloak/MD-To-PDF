@@ -160,7 +160,7 @@ This allows you to reuse existing typography, spacing, colors, and print rules.
 
 ## Mermaid Scaling Strategy
 
-Mermaid rendering is configured in [`MERMAID_BOOTSTRAP`](src/core/build-html.js:87) using:
+Mermaid rendering is configured by [`mermaidInitOptions()`](src/core/mermaid-bootstrap.js) using:
 
 - `theme: 'base'`
 - `startOnLoad: false`
@@ -210,8 +210,9 @@ Mermaid compiles `style X fill:…,color:…` directives in Markdown into **inli
 declarations, which outrank any stylesheet rule, including `!important` ones. Left alone this
 makes some diagram labels keep their author colour while others take the theme colour.
 
-A theme opts in to correcting this by defining `--mermaid-normalize`. The Mermaid bootstrap in
-[`build-html.js`](src/core/build-html.js) then strips the inline text colours after render so the
+A theme opts in to correcting this by defining `--mermaid-normalize`. The Mermaid browser
+program in [`mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — inlined into the document at
+assembly time — then strips the inline text colours after render so the
 theme governs every label evenly. The OLED, warm paper, high contrast, and compact themes opt in;
 the default theme leaves author colours untouched. Author **fill** colours are always preserved.
 
@@ -290,7 +291,8 @@ Core pipeline, in call order:
 - [`src/core/load-input.js`](src/core/load-input.js) — Markdown and stylesheet file loading
 - [`src/core/render-markdown.js`](src/core/render-markdown.js) — Markdown rendering; the Mermaid, block-math, and inline-math tokenizers live here
 - [`src/core/readiness-protocol.js`](src/core/readiness-protocol.js) — the readiness flag names, as one source of truth for both the injected browser program and the renderer
-- [`src/core/build-html.js`](src/core/build-html.js) — HTML assembly: base and print stylesheets, the Mermaid and KaTeX bootstraps, and the protocol inlining
+- [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the label-normalisation luminance rule, and render diagnostics; inlined into the document at assembly time
+- [`src/core/build-html.js`](src/core/build-html.js) — HTML assembly: base and print stylesheets, inlining the Mermaid program, the KaTeX bootstrap, and the protocol inlining
 - [`src/core/render-pdf.js`](src/core/render-pdf.js) — Puppeteer launch, readiness polling, error classification, and PDF export
 - [`src/core/write-output.js`](src/core/write-output.js) — writes the PDF, reporting filesystem failures as input errors
 - [`src/core/errors.js`](src/core/errors.js) — CLI-friendly errors carrying exit codes
