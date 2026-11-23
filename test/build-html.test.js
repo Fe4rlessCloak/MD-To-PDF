@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildHtml } from '../src/core/build-html.js';
+import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 
 const BODY = '<p>Hello <strong>world</strong></p>';
 const USER_CSS = '.custom-marker { color: rebeccapurple; }';
@@ -43,8 +44,11 @@ test('includes both bootstrap scripts and completion flags', () => {
   const html = buildHtml({ bodyHtml: BODY, userCss: null });
   assert.ok(html.includes('mermaid.esm.min.mjs'));
   assert.ok(html.includes('katex.mjs'));
-  assert.ok(html.includes('__MERMAID_RENDER_DONE__'));
-  assert.ok(html.includes('__MATH_RENDER_DONE__'));
+  // Flag names are owned by the readiness protocol; assert the reference the
+  // bootstraps actually make, and that the protocol is inlined for them.
+  assert.ok(html.includes(readinessFlagsSource()));
+  assert.ok(html.includes(`window[RF.mermaidRenderDone] = true`));
+  assert.ok(html.includes(`window[RF.mathRenderDone] = true`));
 });
 
 test('includes the KaTeX stylesheet link', () => {
@@ -98,7 +102,7 @@ test('base CSS provides an @page margin fallback before user CSS', () => {
 test('mermaid bootstrap renders diagrams per-node and always signals done', () => {
   const html = buildHtml({ bodyHtml: BODY, userCss: null });
   assert.ok(html.includes('mermaid.render('));
-  assert.ok(html.includes('__MERMAID_ERRORS__'));
+  assert.ok(html.includes('window[RF.mermaidErrors].push('));
   assert.ok(html.includes('finally'));
 });
 
@@ -106,9 +110,9 @@ test('skips CDN module imports at runtime when no diagrams or math are present a
   const html = buildHtml({ bodyHtml: BODY, userCss: null });
   assert.ok(html.includes('if (nodes.length > 0)'));
   assert.ok(html.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
-  assert.ok(html.includes('window.__MERMAID_READY__'));
+  assert.ok(html.includes('window[RF.mermaidReady]'));
   assert.ok(!html.includes('25000'));
-  assert.ok(html.includes('__MATH_ERRORS__'));
+  assert.ok(html.includes('window[RF.mathErrors]'));
   assert.ok(html.includes('el.textContent = raw'));
 });
 

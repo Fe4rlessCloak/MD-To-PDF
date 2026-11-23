@@ -16,6 +16,7 @@
     "./src/core/load-input": "./src/core/load-input.js",
     "./src/core/render-markdown": "./src/core/render-markdown.js",
     "./src/core/build-html": "./src/core/build-html.js",
+    "./src/core/readiness-protocol": "./src/core/readiness-protocol.js",
     "./src/core/render-pdf": "./src/core/render-pdf.js",
     "./src/core/errors": "./src/core/errors.js"
   },
