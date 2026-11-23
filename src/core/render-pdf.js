@@ -5,6 +5,7 @@
 
 import puppeteer from 'puppeteer';
 import { RenderError } from './errors.js';
+import { READINESS_FLAGS } from './readiness-protocol.js';
 
 /**
  * Default Puppeteer launch options.
@@ -84,7 +85,7 @@ export async function renderPdf(html, options = {}) {
     await page.setContent(html, { waitUntil: 'load' });
 
     // Wait for Mermaid to finish rendering.
-    const mermaidDone = await waitForFlag(page, '__MERMAID_RENDER_DONE__', 'Mermaid');
+    const mermaidDone = await waitForFlag(page, READINESS_FLAGS.mermaidRenderDone, 'Mermaid');
     if (!mermaidDone) {
       throw new RenderError(
         'Mermaid diagrams did not finish rendering within 30 seconds.'
@@ -92,7 +93,7 @@ export async function renderPdf(html, options = {}) {
     }
 
     // Fail fast on Mermaid bootstrap/CDN failure; warn on per-diagram syntax errors.
-    const mermaidErrors = await page.evaluate(() => window.__MERMAID_ERRORS__ || []);
+    const mermaidErrors = await page.evaluate((flags) => window[flags.mermaidErrors] || [], READINESS_FLAGS);
     const mermaidFatal = mermaidErrors.find((e) => e.index === -1);
     if (mermaidFatal) {
       throw new RenderError(
@@ -109,7 +110,7 @@ export async function renderPdf(html, options = {}) {
     }
 
     // Wait for KaTeX to finish rendering.
-    const mathDone = await waitForFlag(page, '__MATH_RENDER_DONE__', 'KaTeX');
+    const mathDone = await waitForFlag(page, READINESS_FLAGS.mathRenderDone, 'KaTeX');
     if (!mathDone) {
       throw new RenderError(
         'KaTeX math did not finish rendering within 30 seconds.'
@@ -117,7 +118,7 @@ export async function renderPdf(html, options = {}) {
     }
 
     // Fail fast on KaTeX bootstrap/CDN failure; warn on per-expression errors.
-    const mathErrors = await page.evaluate(() => window.__MATH_ERRORS__ || []);
+    const mathErrors = await page.evaluate((flags) => window[flags.mathErrors] || [], READINESS_FLAGS);
     const mathFatal = mathErrors.find((e) => e.index === -1);
     if (mathFatal) {
       throw new RenderError(
@@ -134,7 +135,7 @@ export async function renderPdf(html, options = {}) {
     }
 
     if (process.env.MD_TO_PDF_DEBUG) {
-      const mermaidDebug = await page.evaluate(() => window.__MERMAID_DEBUG__ || []);
+      const mermaidDebug = await page.evaluate((flags) => window[flags.mermaidDebug] || [], READINESS_FLAGS);
       process.stderr.write(`[renderPdf()] Mermaid debug: ${JSON.stringify(mermaidDebug)}\n`);
     }
 

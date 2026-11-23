@@ -3,6 +3,15 @@
  * injected user CSS, Mermaid runtime bootstrap, and KaTeX math rendering.
  */
 
+import { readinessFlagsSource } from './readiness-protocol.js';
+
+/**
+ * Injected declaration of the readiness protocol. Each bootstrap script is a
+ * module, so it carries its own copy of the flag names rather than sharing a
+ * global; the names themselves come from the protocol module.
+ */
+const READINESS_SOURCE = readinessFlagsSource();
+
 /**
  * Default base stylesheet — provides safe print defaults.
  * User CSS is appended after this so it takes precedence for typography.
@@ -77,12 +86,13 @@ const KATEX_CSS = `
  */
 const MERMAID_BOOTSTRAP = `
 <script type="module">
+${READINESS_SOURCE}
 let resolveMermaidReady;
-window.__MERMAID_READY__ = new Promise((resolve) => {
+window[RF.mermaidReady] = new Promise((resolve) => {
   resolveMermaidReady = resolve;
 });
-window.__MERMAID_ERRORS__ = [];
-window.__MERMAID_DEBUG__ = [];
+window[RF.mermaidErrors] = [];
+window[RF.mermaidDebug] = [];
 
 function isDarkColor(color) {
   const m = color && color.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
@@ -115,14 +125,14 @@ try {
 
     // Render each diagram independently so one broken diagram cannot take
     // down the whole document. Failures become a visible error placeholder
-    // and are reported in window.__MERMAID_ERRORS__ for the PDF step.
+    // and are reported in the protocol's error flag for the PDF step.
     for (const [index, node] of nodes.entries()) {
       try {
         const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
         node.innerHTML = svg;
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
-        window.__MERMAID_ERRORS__.push({ index, error: message });
+        window[RF.mermaidErrors].push({ index, error: message });
         document.getElementById('dmermaid-' + index)?.remove();
         node.textContent = 'Mermaid diagram failed to render: ' + message;
       }
@@ -152,7 +162,7 @@ try {
     }
 
     // Emit basic render diagnostics for print-layout debugging.
-    window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
+    window[RF.mermaidDebug] = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
       const svg = node.querySelector('svg');
       const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
       const nodeRect = node.getBoundingClientRect();
@@ -176,10 +186,10 @@ try {
   }
 } catch (err) {
   const message = err && err.message ? err.message : String(err);
-  window.__MERMAID_ERRORS__.push({ index: -1, error: message });
+  window[RF.mermaidErrors].push({ index: -1, error: message });
 } finally {
   // Signal that rendering is complete so KaTeX and Puppeteer can proceed.
-  window.__MERMAID_RENDER_DONE__ = true;
+  window[RF.mermaidRenderDone] = true;
   resolveMermaidReady();
 }
 </script>
@@ -192,11 +202,12 @@ try {
  */
 const KATEX_BOOTSTRAP = `
 <script type="module">
-window.__MATH_ERRORS__ = [];
+${READINESS_SOURCE}
+window[RF.mathErrors] = [];
 try {
   // Wait deterministically for Mermaid to finish before mutating the DOM.
-  if (window.__MERMAID_READY__) {
-    await window.__MERMAID_READY__;
+  if (window[RF.mermaidReady]) {
+    await window[RF.mermaidReady];
   }
 
   const displayNodes = document.querySelectorAll('.math-display');
@@ -213,7 +224,7 @@ try {
       } catch (err) {
         el.textContent = raw;
         const message = err && err.message ? err.message : String(err);
-        window.__MATH_ERRORS__.push({ index: idx, kind: 'display', error: message });
+        window[RF.mathErrors].push({ index: idx, kind: 'display', error: message });
       }
       idx++;
     }
@@ -225,17 +236,17 @@ try {
       } catch (err) {
         el.textContent = raw;
         const message = err && err.message ? err.message : String(err);
-        window.__MATH_ERRORS__.push({ index: idx, kind: 'inline', error: message });
+        window[RF.mathErrors].push({ index: idx, kind: 'inline', error: message });
       }
       idx++;
     }
   }
 } catch (err) {
   const message = err && err.message ? err.message : String(err);
-  window.__MATH_ERRORS__.push({ index: -1, kind: 'bootstrap', error: message });
+  window[RF.mathErrors].push({ index: -1, kind: 'bootstrap', error: message });
 } finally {
   // Signal that math rendering is complete.
-  window.__MATH_RENDER_DONE__ = true;
+  window[RF.mathRenderDone] = true;
 }
 </script>
 `;
