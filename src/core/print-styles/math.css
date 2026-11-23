@@ -1,0 +1,20 @@
+/*
+ * Math stylesheet — keeps typeset math inside the document flow.
+ *
+ * Emitted after user CSS, like the containment rules, because a display block
+ * that is allowed to split across a page boundary prints as two unreadable
+ * halves and no theme should be able to opt into that.
+ */
+.math-display {
+  display: block;
+  text-align: center;
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.math-inline {
+  display: inline;
+  white-space: nowrap;
+}

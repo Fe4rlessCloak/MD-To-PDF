@@ -41,7 +41,10 @@ npm install
 Dependencies are declared in [`package.json`](package.json), including:
 - [`marked`](package.json:27)
 - [`puppeteer`](package.json:28)
-- [`katex`](package.json:26) — the browser loads KaTeX and Mermaid from a CDN at render time; the manifest entry declares the version the document targets.
+
+The browser loads KaTeX and Mermaid from a CDN at render time; the versions the
+document targets are owned by `src/core/katex-bootstrap.js` and
+`src/core/mermaid-bootstrap.js`, so nothing is fetched from npm to render.
 
 ## Usage
 
