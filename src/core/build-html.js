@@ -8,7 +8,10 @@
  *   (`mermaid-bootstrap.js`, `katex-bootstrap.js`), inlined as source text and
  *   invoked at the call site;
  * - the three print stylesheets are files (`print-styles/`), read and emitted
- *   in the order `print-styles.js` returns them.
+ *   in the order `print-styles.js` returns them;
+ * - page geometry is a module (`page-geometry.js`) that emits the `@page`
+ *   rule from a geometry value. Assembly emits it last, after every print
+ *   layer, so the module's rule is the one that decides the page.
  *
  * The document stays a single self-contained file: the only fetches it makes at
  * runtime are the two CDN imports inside the bootstraps, and neither happens
@@ -18,6 +21,7 @@
 import { readFileSync } from 'node:fs';
 import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
 import { stylesheetPayload } from './print-styles/print-styles.js';
+import { pageGeometry, DEFAULT_PAGE_GEOMETRY } from './page-geometry.js';
 import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
 /**
@@ -156,15 +160,24 @@ await runKatexBootstrap({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
  * @param {string|null} params.userCss  Optional user-provided CSS text.
  * @param {import('./document-options.js').DocumentOptions} [params.options]
  *   Document options; supplies the title.
+ * @param {Partial<import('./page-geometry.js').PageGeometry>} [params.page]
+ *   Page geometry overrides. Defaults to {@link DEFAULT_PAGE_GEOMETRY}.
  * @returns {string}
  */
-export function buildHtml({ bodyHtml, userCss, options = {} }) {
+export function buildHtml({ bodyHtml, userCss, options = {}, page = DEFAULT_PAGE_GEOMETRY }) {
   const title = options.title ?? null;
 
   // Emitted in the order the print-styles module returns: base, user CSS,
   // containment, math. The order is the contract, not an implementation
   // detail — see `stylesheetPayload`.
-  const styleTag = stylesheetPayload({ userCss })
+  const layers = stylesheetPayload({ userCss });
+
+  // Page geometry is appended after every print layer. It carries no other
+  // rules, so the contract above is unaffected, and emitting it last means the
+  // module's `@page` cannot be overridden by a stale copy in a theme.
+  layers.push({ name: 'page-geometry', css: pageGeometry(page).css });
+
+  const styleTag = layers
     .map((layer) => `<style>\n${neutralizeClosingTag(layer.css.trim(), 'style')}\n</style>`)
     .join('\n');
 

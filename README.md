@@ -88,7 +88,9 @@ The accepted flags — two optional ones, after the input and output paths:
 Unknown flags are rejected with an error naming the flag. `--format` (page size) and
 `--margin` (page margin) are **not implemented** and are rejected with an error saying
 so — passing them will not produce a differently shaped PDF. Until they are built, page
-size is fixed at A4 and margins come from the `@page` rule in the active stylesheet.
+size is fixed at A4 and page margins are owned by [`page-geometry.js`](src/core/page-geometry.js),
+which emits the document's single `@page` rule; a theme supplies its margin as a CSS
+variable rather than declaring a rule.
 Both lists live in [`document-options.js`](src/core/document-options.js:62), so the
 documented set and the implemented set cannot drift apart.
 
@@ -330,7 +332,7 @@ source appears as visible text.
 
 - The CLI supports [`--style`](src/core/document-options.js) and [`--title`](src/core/document-options.js); both are declared in the document options module.
 - Unknown flags are rejected with an error naming the flag in [`parseArgs()`](src/cli/parse-args.js).
-- `--format` and `--margin` are not implemented; passing either is an error, not a silent no-op. Page size is fixed at A4 and margins come from the active stylesheet's `@page` rule.
+- `--format` and `--margin` are not implemented; passing either is an error, not a silent no-op. Page size is fixed at A4 and page geometry (margins, sheet background, page number, cover page) is owned by [`pageGeometry()`](src/core/page-geometry.js), which emits the document's one `@page` rule and the renderer's `preferCSSPageSize`; themes supply geometry as CSS variables.
 - The readiness flag names live in [`READINESS_FLAGS`](src/core/readiness-protocol.js:32); the injected bootstraps and the renderer both reference them through it.
 - Output-file write failures are reported as input errors (exit code 2) by [`writePdfOutput()`](src/core/write-output.js).
 - Mermaid debug output is printed when `MD_TO_PDF_DEBUG` is set, in [`renderPdf()`](src/core/render-pdf.js).

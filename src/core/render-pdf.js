@@ -10,6 +10,7 @@
 
 import puppeteer from 'puppeteer';
 import { RenderError } from './errors.js';
+import { pageGeometry } from './page-geometry.js';
 import {
   READINESS_FLAGS,
   waitForReadiness,
@@ -33,14 +34,19 @@ const DEFAULT_LAUNCH_OPTIONS = {
 
 /**
  * Default PDF options.
- * Extensible for future flags like --format, --margin.
+ *
+ * Page size and margins are deliberately absent: they are owned by the `@page`
+ * rule that `page-geometry.js` emits into the document, and `preferCSSPageSize`
+ * — also from that module — makes the rule authoritative. Naming a `format`
+ * here would let the browser override the stylesheet, which is the
+ * contradiction the geometry module removes. Extensible for a future
+ * `--format` / `--margin` only through the geometry object, not here.
  *
  * @type {import('puppeteer').PDFOptions}
  */
 const DEFAULT_PDF_OPTIONS = {
-  format: 'A4',
   printBackground: true,
-  preferCSSPageSize: true,
+  ...pageGeometry().pdfOptions,
 };
 
 /** @param {string} line */
