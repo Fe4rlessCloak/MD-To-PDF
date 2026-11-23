@@ -44,15 +44,18 @@ test('every print stylesheet is a real file whose contents the module reads', as
 });
 
 test('the base stylesheet keeps the print defaults user CSS is meant to override', () => {
-  const base = printStylesheetSource('base');
+  // Comments in the sheet explain that the page rule lives elsewhere; strip
+  // them so the assertion is about declarations, not prose.
+  const base = printStylesheetSource('base').replace(/\/\*[\s\S]*?\*\//g, '');
 
   assert.match(base, /box-sizing: border-box/);
   assert.match(base, /font-family: Georgia/);
   assert.match(base, /font-size: 11pt/);
   assert.match(base, /line-height: 1\.6/);
-  // The fallback page margin. Page geometry is a separate concern; this only
-  // has to keep providing a usable default when a theme supplies none.
-  assert.match(base, /@page\s*\{[^}]*margin:/);
+  // Page geometry is a separate concern with its own owner: the base sheet must
+  // not declare a page rule, or a document would carry two of them and the
+  // theme's margin could lose to a fallback.
+  assert.ok(!base.includes('@page'), 'the base sheet must not declare a page rule');
 });
 
 test('the containment stylesheet keeps its un-overridable scaling rules', () => {

@@ -21,26 +21,10 @@
     --code-ink:  #08423e;
     --diagram-line: #5a6b69;
     --diagram-edge: #a9b7b5;
-}
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 1.4cm 1.5cm;
-    background: #ffffff;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 8pt;
-        color: #4a4a4a;
-    }
-}
-
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
+    /* Page geometry values only. The @page rule itself is owned by
+       src/core/page-geometry.js; a theme must never declare one. */
+    --page-margin: 1.4cm 1.5cm;
 }
 
 /* --- BODY --- */
@@ -51,63 +35,6 @@ body {
     color: var(--ink);
     background: var(--canvas);
     counter-reset: h2-counter;
-}
-
-/* --- COVER PAGE --- */
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #0b2624;
-    color: #eaf3f2;
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-size: 26pt;
-    font-weight: 700;
-    margin: 0 0 0.4em 0;
-    color: #ffffff;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-size: 14pt;
-    font-weight: 400;
-    margin: 0 0 1.2em 0;
-    opacity: 0.9;
-}
-
-.cover .meta {
-    font-size: 10pt;
-    opacity: 0.85;
-    margin-top: 0.8em;
-    line-height: 1.7;
-}
-
-.cover .divider {
-    width: 60px;
-    height: 3px;
-    background: #4db6ac;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: rgba(77, 182, 172, 0.18);
-    border: 1px solid #4db6ac;
-    border-radius: 3px;
-    padding: 5px 14px;
-    font-size: 9pt;
-    color: #8fd6cf;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
