@@ -10,6 +10,14 @@
 import { InputError } from './errors.js';
 
 /**
+ * @typedef {Object} DocumentOptions
+ * @property {string|null} input   Path to the input Markdown file.
+ * @property {string|null} output  Path for the generated PDF.
+ * @property {string|null} style   Path to an optional CSS stylesheet.
+ * @property {string|null} title   Document title for `<title>` and PDF metadata.
+ */
+
+/**
  * Every option a document can carry, with its default value.
  *
  * A new option is added here; the parser and assembly pick it up by key.
