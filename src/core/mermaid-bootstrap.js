@@ -31,8 +31,17 @@
  * legible there.
  *
  * The measurement half is pure and tested without a browser; the adapter that
- * reads rects and computed styles is not unit-tested, because a fake DOM that
- * agreed with it would only prove the fake agrees with itself.
+ * reads geometry and computed styles is covered by the rendered PDFs instead,
+ * because a fake DOM that agreed with it would only prove the fake agrees with
+ * itself.
+ *
+ * **One file, and why.** `build-html.js` inlines this program by reading this
+ * file's text with `readFileSync` and putting it in a module script element;
+ * there is no bundler in the pipeline. So the text of any `import` here would
+ * arrive in the document as a fetch the page cannot make, and the pure halves
+ * cannot live in a sibling module that this one re-exports. That is the
+ * constraint behind the five banner sections below, not an oversight: a
+ * sibling would buy nothing that a section boundary does not.
  */
 
 /**
@@ -54,6 +63,22 @@ export const MERMAID_CDN_URL =
  * @type {string}
  */
 export const NORMALIZE_VARIABLE = '--mermaid-normalize';
+
+/**
+ * CSS custom property that carries the page sheet colour.
+ *
+ * Read, not owned: `src/core/page-geometry.js` owns this name and writes it
+ * into the `@page` rule, which is what actually paints the sheet. This program
+ * reads it because the surface under a label is the sheet composited with the
+ * element backgrounds, and the sheet is the property that owns the paint — a
+ * `html`/`body` background is a second, optional thing (`style.css` sets
+ * neither). The name cannot be imported here because this file's source text is
+ * inlined as browser code, so the agreement is pinned by a test instead of by
+ * the language.
+ *
+ * @type {string}
+ */
+export const PAGE_BACKGROUND_VARIABLE = '--page-background';
 
 /**
  * CSS custom property a theme defines to select Mermaid's built-in theme.
@@ -128,6 +153,12 @@ export const GANTT_VARIABLES = Object.freeze([
  * read by the program, and anything else has to be in `MERMAID_VARIABLES`.
  * Adding a read means adding its name here, and the contract test then knows
  * about it without being edited.
+ *
+ * Only `--mermaid-*` names belong here: this list is what tells a
+ * program-owned property from a shared-block one inside that prefix.
+ * {@link PAGE_BACKGROUND_VARIABLE} is read too, but it is a page-geometry
+ * property rather than a Mermaid one, so it stays out and its agreement is
+ * pinned separately.
  *
  * A frozen array rather than a `Set`, for the same reason
  * `MERMAID_VARIABLES` is one: `Object.freeze` does not stop `Set.add`, so a
@@ -204,10 +235,19 @@ export const LABEL_INK_CANDIDATES = Object.freeze([LABEL_DARK_COLOR, LABEL_LIGHT
  * Relative luminance below which a colour counts as dark.
  *
  * The WCAG mid-grey: `#808080` on the 0–1 linear scale the contrast formula
- * uses. This is the same split the previous 0–255 YIQ threshold drew, restated
- * on the scale the contrast ratio is actually computed from, so the palette
- * check that reads it (`isDarkColor`) keeps answering the same way for every
- * colour it answered before.
+ * uses.
+ *
+ * **This split is deliberately not the old one.** The previous rule thresholded
+ * 0–255 "YIQ" brightness, which is not a perceptual luminance at all — it
+ * weights the gamma-encoded channels linearly, so it calls `rgb(60,160,60)`
+ * dark and mid grey light, and its split corresponds to no contrast boundary.
+ * This threshold is stated on the scale the WCAG ratio is actually computed
+ * from, so a colour just below it is one where the ratio to paper is roughly
+ * where the ratio to black overtakes it. Moving to it therefore reclassifies
+ * colours near the boundary — by design, because the old boundary was the
+ * thing that was wrong. It is a palette predicate, not the normaliser's
+ * decision: the normaliser compares contrast ratios directly and never asks
+ * this question.
  *
  * @type {number}
  */
@@ -357,6 +397,21 @@ export function compositeOver(top, bottom) {
 }
 
 /**
+ * A parsed colour, accepting either already-parsed channels or CSS text.
+ *
+ * Two callers need this — {@link relativeLuminance} and {@link isDarkColor} —
+ * because one is documented to take either and the other takes whatever a
+ * palette check hands it. Stated once so the `typeof` test and the null-when-
+ * unmeasurable rule cannot drift between them.
+ *
+ * @param {{r: number, g: number, b: number, a?: number}|string} color
+ * @returns {{r: number, g: number, b: number, a: number}|null}
+ */
+function asParsedColor(color) {
+  return typeof color === 'string' ? parseColor(color) : color;
+}
+
+/**
  * WCAG relative luminance of a colour.
  *
  * Each channel is undoing the sRGB transfer function first, then weighted as
@@ -368,7 +423,7 @@ export function compositeOver(top, bottom) {
  * @returns {number|null} A value in 0–1, or null when the colour is unmeasurable.
  */
 export function relativeLuminance(color) {
-  const parsed = typeof color === 'string' ? parseColor(color) : color;
+  const parsed = asParsedColor(color);
   if (!parsed || typeof parsed.r !== 'number') return null;
 
   const linear = (value) => {
@@ -466,14 +521,30 @@ export function normalizedInk({ surface, ink, candidates = LABEL_INK_CANDIDATES 
  * is not painted geometry is the caller's responsibility to leave out; this
  * function takes the list at its word, which is what keeps it testable.
  *
+ * **Containment is the record's to answer.** A `<path>`, `<polygon>`, `<circle>`
+ * or `<ellipse>` does not paint its bounding box: a diagonal edge or a pie
+ * slice leaves whole corners of the box unpainted, and sampling those corners
+ * invents a surface no pixel shows. So a record may carry a `contains(x, y)`
+ * predicate, in the same coordinates as `x` and `y`, and this function asks it
+ * instead of the box. The adapter supplies it from
+ * `SVGGeometryElement.isPointInFill`; a record without one is assumed
+ * rectangular, which is exact for `<rect>` and is what the plain-record tests
+ * use. Keeping the predicate on the record rather than a second parameter is
+ * what stops this function from needing to know which primitive is which.
+ *
+ * `tag` is required and is not defaulted: a record that does not say what
+ * element it came from paints nothing, because a silent promotion to `rect`
+ * would hide a caller that forgot to say.
+ *
  * A point outside every shape is the canvas: that is the Gantt outside-bar
  * case, and it is why the canvas is a parameter rather than a fallback to
  * white.
  *
  * @param {number} x
  * @param {number} y
- * @param {Array<{tag?: string, x: number, y: number, width: number, height: number,
- *   fill: string, opacity?: number, fillOpacity?: number}>} shapes
+ * @param {Array<{tag: string, x: number, y: number, width: number, height: number,
+ *   fill: string, opacity?: number, fillOpacity?: number,
+ *   contains?: (x: number, y: number) => boolean}>} shapes
  * @param {{r: number, g: number, b: number, a: number}} canvas
  * @returns {{r: number, g: number, b: number, a: number}}
  */
@@ -481,10 +552,8 @@ export function paintedSurfaceAt(x, y, shapes, canvas) {
   let surface = canvas;
 
   for (const shape of shapes) {
-    if (!PAINTED_SHAPE_TAGS.includes(shape.tag ?? 'rect')) continue;
-
-    const { x: left, y: top, width, height } = shape;
-    if (x < left || x > left + width || y < top || y > top + height) continue;
+    if (!PAINTED_SHAPE_TAGS.includes(shape.tag)) continue;
+    if (!shapeContains(shape, x, y)) continue;
 
     const colour = parseColor(shape.fill);
     if (!colour || colour.a === 0) continue;
@@ -501,25 +570,56 @@ export function paintedSurfaceAt(x, y, shapes, canvas) {
 }
 
 /**
+ * Does this record paint the point?
+ *
+ * The record's own predicate when it has one, its box otherwise. Written as
+ * `=== true` so a predicate that forgets to return a boolean is treated as a
+ * miss rather than as a hit: a shape is only a surface here if it says so.
+ *
+ * @param {{x: number, y: number, width: number, height: number,
+ *   contains?: (x: number, y: number) => boolean}} shape
+ * @param {number} x
+ * @param {number} y
+ * @returns {boolean}
+ */
+function shapeContains(shape, x, y) {
+  if (typeof shape.contains === 'function') return shape.contains(x, y) === true;
+
+  const { x: left, y: top, width, height } = shape;
+  return x >= left && x <= left + width && y >= top && y <= top + height;
+}
+
+/**
  * The page surface a diagram sits on, composited over white.
  *
- * White is the terminal backdrop because a PDF page is paper: `html` and
- * `body` may both be transparent, and something has to be behind them. The two
- * are composited root-first, which is the order print paints them in.
+ * White is the terminal backdrop because a PDF page is paper: the sheet, `html`
+ * and `body` may all be transparent, and something has to be behind them.
+ *
+ * **The sheet colour belongs to `@page`.** A theme paints the page through
+ * `--page-background`, which `page-geometry.js` writes into the `@page` rule;
+ * `html` and `body` backgrounds are a second, narrower thing that a stylesheet
+ * may leave unset entirely (`style.css` sets neither). So the resolved sheet
+ * variable is the first thing composited and the only authoritative source;
+ * the `html`/`body` chain is the fallback for a document that sets no page
+ * background at all. Reading only the element chain would sample a property
+ * that does not own the sheet and coincide with the truth by luck.
  *
  * @param {CSSStyleDeclaration} rootStyle
  * @param {CSSStyleDeclaration} [bodyStyle]
+ * @param {string} [sheet]  Resolved `--page-background` value, or empty when unset.
  * @returns {{r: number, g: number, b: number, a: number}}
  */
-export function canvasColor(rootStyle, bodyStyle) {
+export function canvasColor(rootStyle, bodyStyle, sheet = '') {
   const paper = { r: 255, g: 255, b: 255, a: 1 };
+  const sheetColor = parseColor(sheet);
+  const base = sheetColor ? compositeOver(sheetColor, paper) : paper;
   const root = parseColor(rootStyle?.backgroundColor) ?? { r: 0, g: 0, b: 0, a: 0 };
   const body = parseColor(bodyStyle?.backgroundColor) ?? { r: 0, g: 0, b: 0, a: 0 };
-  return compositeOver(body, compositeOver(root, paper));
+  return compositeOver(body, compositeOver(root, base));
 }
 
 // ---------------------------------------------------------------------------
-// The theme-variable bridge for Mermaid's own Gantt palette
+// The Adapter from theme variables to Mermaid's own Gantt palette
 // ---------------------------------------------------------------------------
 
 /**
@@ -557,17 +657,18 @@ export function ganttThemeVariables(readVariable) {
  * {@link DEFAULT_MERMAID_THEME} rather than a literal here, so the fallback is
  * stated once.
  *
- * The variable sets arrive as separate arguments and are merged in order, so a
- * caller can add its own without knowing about the Gantt bridge and the bridge
- * can add its own without knowing about the caller. When nothing is supplied
- * the `themeVariables` key is absent rather than empty, which is what keeps a
- * theme that paints nothing byte-identical in the assembled document.
+ * `themeVariables` is one already-merged set, because there is exactly one
+ * source of them: {@link ganttThemeVariables}, which reads what the theme
+ * declared. A caller with variables of its own merges before calling. When the
+ * set is empty the `themeVariables` key is absent rather than empty, which is
+ * what keeps a theme that paints nothing byte-identical in the assembled
+ * document.
  *
  * @param {string} [theme=DEFAULT_MERMAID_THEME]  Resolved Mermaid theme name.
- * @param {...{[key: string]: string}} variableSets  Mermaid theme variables, merged left to right.
+ * @param {{[key: string]: string}} [themeVariables]  Mermaid theme variables, already merged.
  * @returns {Object} A fresh options object for `mermaid.initialize`.
  */
-export function mermaidInitOptions(theme = DEFAULT_MERMAID_THEME, ...variableSets) {
+export function mermaidInitOptions(theme = DEFAULT_MERMAID_THEME, themeVariables = {}) {
   const options = {
     startOnLoad: false,
     theme,
@@ -585,9 +686,8 @@ export function mermaidInitOptions(theme = DEFAULT_MERMAID_THEME, ...variableSet
     },
   };
 
-  const themeVariables = Object.assign({}, ...variableSets.filter(Boolean).map((set) => ({ ...set })));
-  if (Object.keys(themeVariables).length > 0) {
-    options.themeVariables = themeVariables;
+  if (themeVariables && Object.keys(themeVariables).length > 0) {
+    options.themeVariables = { ...themeVariables };
   }
 
   return options;
@@ -607,7 +707,7 @@ export function mermaidInitOptions(theme = DEFAULT_MERMAID_THEME, ...variableSet
  * @returns {boolean} True when the colour is dark enough to need light ink.
  */
 export function isDarkColor(color) {
-  const parsed = typeof color === 'string' ? parseColor(color) : color;
+  const parsed = asParsedColor(color);
   // A colour with no alpha paints nothing, so it cannot be dark: the sheet is
   // what shows through, and this predicate answers about paint.
   if (!parsed || parsed.a === 0) return false;
@@ -620,13 +720,57 @@ export function isDarkColor(color) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Point-in-fill predicate for one primitive, in SVG-relative coordinates.
+ *
+ * The records {@link paintedShapes} produces are measured in the SVG's own
+ * frame (both shapes and label centres subtract the SVG's client-rect origin),
+ * while `isPointInFill` wants a point in the element's user units. So the
+ * predicate puts the sampled point back into viewport coordinates and pulls it
+ * through the inverse of `getScreenCTM`, which is the transform the browser
+ * itself would apply — a `viewBox` scale, a nested `<g transform>` and a CSS
+ * transform on the container all get accounted for at once, which is why this
+ * is not arithmetic on the box.
+ *
+ * `null` when the element cannot answer: an older engine with no
+ * `isPointInFill`, or an element not yet laid out and so without a CTM. The
+ * caller then leaves the record rectangular, which is the honest approximation
+ * rather than a guess dressed as geometry.
+ *
+ * Fill, not stroke. A stroke is a thin outline along the geometry's edge, and a
+ * label sits on the *fill* inside it; a stroke-only shape is not a surface at
+ * all, and the caller's fill-alpha check already drops those records before
+ * this predicate could be asked. So there is no second predicate for the
+ * stroke case — adding one would describe a surface the sampler never uses.
+ *
+ * @param {Element} el
+ * @param {DOMRect} origin  The SVG's client rect, the frame records are in.
+ * @returns {((x: number, y: number) => boolean)|null}
+ */
+function pointInFill(el, origin) {
+  if (typeof el.isPointInFill !== 'function' || typeof el.getScreenCTM !== 'function') return null;
+  if (typeof DOMPoint !== 'function') return null;
+
+  const matrix = el.getScreenCTM();
+  if (!matrix) return null;
+  const inverse = matrix.inverse();
+
+  return (x, y) => el.isPointInFill(new DOMPoint(x + origin.x, y + origin.y).matrixTransform(inverse)) === true;
+}
+
+/**
  * Collect the painted geometry of one rendered diagram as plain records.
  *
  * Only {@link PAINTED_SHAPE_SELECTOR} elements are read, and only those with a
  * non-transparent fill and positive opacity. Coordinates are made relative to
- * the SVG's own box so they compare directly with a label's centre, which is
- * also measured in that frame; SVG user units and CSS pixels agree here
- * because no diagram is drawn with a non-uniform viewBox transform.
+ * the SVG's own box, which is the same frame {@link visibleLabels} reports a
+ * label's centre in — that agreement is the contract the whole normaliser
+ * rests on, and it is why both halves subtract the same origin rather than
+ * working in viewport coordinates.
+ *
+ * Containment is decided per primitive: a `<rect>` keeps its box, which is
+ * exact, and every other tag carries a `contains` predicate from
+ * {@link pointInFill} so a diagonal path or a pie slice cannot claim the
+ * unpainted corners of its bounding box.
  *
  * @param {Element} svg
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
@@ -641,8 +785,9 @@ function paintedShapes(svg, computedStyle) {
     const box = el.getBoundingClientRect();
     if (!(box.width > 0) || !(box.height > 0)) continue;
 
-    shapes.push({
-      tag: el.tagName.toLowerCase(),
+    const tag = el.tagName.toLowerCase();
+    const record = {
+      tag,
       x: box.x - origin.x,
       y: box.y - origin.y,
       width: box.width,
@@ -650,7 +795,14 @@ function paintedShapes(svg, computedStyle) {
       fill: style.fill,
       opacity: style.opacity === '' ? 1 : Number(style.opacity),
       fillOpacity: style.fillOpacity === '' ? 1 : Number(style.fillOpacity),
-    });
+    };
+
+    if (tag !== 'rect') {
+      const contains = pointInFill(el, origin);
+      if (contains) record.contains = contains;
+    }
+
+    shapes.push(record);
   }
 
   return shapes;
@@ -750,23 +902,33 @@ function applyInk(el, ink) {
  *
  * @param {Document} doc
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
- * @returns {{checked: number, adjusted: number}} How many labels were examined
- *   and how many needed a different ink, so a render check can report it.
+ * @param {string} [sheet]  Resolved `--page-background`; see {@link canvasColor}.
+ * @returns {Array<{index: number, checked: number, adjusted: number}>} Per
+ *   diagram, in document order: how many labels were examined and how many
+ *   needed a different ink. The render loop merges these into the debug report,
+ *   so a render check can see the normaliser ran and which diagram it changed
+ *   most.
  */
-export function normalizeLabelColors(doc, computedStyle) {
+export function normalizeLabelColors(doc, computedStyle, sheet = '') {
   const canvas = canvasColor(
     computedStyle(doc.documentElement),
     doc.body ? computedStyle(doc.body) : undefined,
+    sheet,
   );
 
-  let checked = 0;
-  let adjusted = 0;
+  const counts = [];
+  let index = 0;
 
   for (const container of doc.querySelectorAll('.mermaid')) {
+    const containerIndex = index;
+    index += 1;
+
     const svg = container.querySelector('svg');
     if (!svg) continue;
 
     const shapes = paintedShapes(svg, computedStyle);
+    let checked = 0;
+    let adjusted = 0;
 
     for (const label of visibleLabels(svg, computedStyle)) {
       checked += 1;
@@ -783,9 +945,11 @@ export function normalizeLabelColors(doc, computedStyle) {
       applyInk(label.el, ink);
       adjusted += 1;
     }
+
+    counts.push({ index: containerIndex, checked, adjusted });
   }
 
-  return { checked, adjusted };
+  return counts;
 }
 
 // ---------------------------------------------------------------------------
@@ -945,13 +1109,26 @@ export async function runMermaidBootstrap({
         }
       }
 
-      // Opt-in, read back from the theme at render time.
-      const normalize = rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE);
-      if (normalize) {
-        normalizeLabelColors(document_, computedStyle);
+      // Opt-in, read back from the theme at render time. The sheet colour comes
+      // from the same root style, because `--page-background` is what `@page`
+      // paints the page with; see `canvasColor`.
+      const rootStyleAtRender = computedStyle(document_.documentElement);
+      const reports = collectDebugReports(document_);
+      if (rootVariableValue(rootStyleAtRender, NORMALIZE_VARIABLE)) {
+        const counts = normalizeLabelColors(
+          document_,
+          computedStyle,
+          rootVariableValue(rootStyleAtRender, PAGE_BACKGROUND_VARIABLE),
+        );
+        // Merged by index so the count lands beside the diagram it describes.
+        // The counts are per rendered SVG, and a container without one was
+        // never counted, so a lookup is used rather than positional pairing.
+        for (const report of reports) {
+          const count = counts.find((entry) => entry.index === report.index);
+          if (count) report.normalization = { checked: count.checked, adjusted: count.adjusted };
+        }
       }
-
-      setFlag(view, 'mermaidDebug', collectDebugReports(document_));
+      setFlag(view, 'mermaidDebug', reports);
     }
   } catch (err) {
     errors.push({ index: fatalReportIndex, error: messageOf(err) });
