@@ -58,5 +58,13 @@ Exit 0 and roughly 80–100 KB per fixture is the healthy baseline; see [Manual 
 1. **Confirm the browser launches before blaming the document.** The renderer already passes `--no-sandbox`. If the CLI exits non-zero with `Failed to launch the browser process`, the environment is at fault, not the Markdown — read the `stderr` block it prints.
 2. **Point Puppeteer at a browser you already have** with `PUPPETEER_EXECUTABLE_PATH=<path to chrome>`, rather than installing another. A distro Chrome or Chromium, or a previous Puppeteer download, works.
 3. **Missing OS shared libraries** — `error while loading shared libraries: libatk-1.0.so.0` and siblings — mean the host lacks Chromium's runtime dependency set. Install the distro packages for that set (Puppeteer's troubleshooting page lists it per distro), or, when the `.so` files already exist somewhere on the host, put that directory on `LD_LIBRARY_PATH` for the render command only. Never commit one machine's library directory or a scratch extraction step.
-4. **Rasterise and inspect.** Render the fixtures as above, then turn pages into images and look at them: `pdftoppm -r 110 -png test-math.pdf page` (poppler-utils), `mutool draw -o page-%d.png -r 110 test-math.pdf`, or a Python binding such as PyMuPDF. Inspect the page images with whatever vision tool the environment provides.
+4. **Rasterise and inspect.** Render the fixtures as above, then turn pages into images and look at them — one of:
+   - `pdftoppm -r 110 -png test-math.pdf page` (poppler-utils)
+   - `mutool draw -o page-%d.png -r 110 test-math.pdf` (MuPDF)
+   - a Python binding such as PyMuPDF, with whichever interpreter has it installed:
+     ```bash
+     python3 -c 'import sys, pymupdf; [p.get_pixmap(dpi=110).save(f"page-{i+1}.png") for i, p in enumerate(pymupdf.open(sys.argv[1]))]' test-math.pdf
+     ```
+
+   None of these is universally installed; use the one the host has. Inspect the resulting images with whatever vision tool the environment provides.
 5. **If no viewer and no image inspection is available, stop and escalate.** Name the fixture and the pages a human must look at, and do not report a rendering change as verified.
