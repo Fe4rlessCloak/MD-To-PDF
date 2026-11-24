@@ -51,6 +51,8 @@ sequenceDiagram
     CLI->>Browser: Load HTML into page
     Browser->>Mermaid: Initialize runtime
     Mermaid-->>Browser: Ready
+    Note over User,CLI: Actor labels and this note must stay legible on dark themes
+    loop For each diagram in the document
     Browser->>Mermaid: Render first diagram
     Mermaid-->>Browser: First SVG complete
     Browser->>Mermaid: Render second diagram
@@ -59,6 +61,7 @@ sequenceDiagram
     Mermaid-->>Browser: Third SVG complete
     Browser->>Mermaid: Render fourth diagram
     Mermaid-->>Browser: Fourth SVG complete
+    end
     Browser->>Browser: Measure SVG bounding boxes
     Browser->>Browser: Apply print-safe scaling
     Browser->>PDF: Export generated document
