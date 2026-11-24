@@ -11,9 +11,9 @@
  * - `runMermaidBootstrap` is the browser entry point, tested by driving it
  *   against a stubbed readiness protocol and a fake document. That is the
  *   second adapter for the seam: the production one is a real page.
- * - The DOM adapter that reads rects and computed styles is *not* unit-tested
+ * - The DOM Adapter that reads geometry and computed styles is *not* tested
  *   here. It is exercised by the rendered PDFs, because a fake DOM that
- *   agreed with the adapter would prove only that the fake agrees with itself.
+ *   agreed with the Adapter would prove only that the fake agrees with itself.
  */
 
 import { test } from 'node:test';
@@ -26,6 +26,7 @@ import {
   mermaidInitOptions,
   rootVariableValue,
   normalizeLabelColors,
+  canvasColor,
   parseColor,
   compositeOver,
   relativeLuminance,
@@ -37,6 +38,7 @@ import {
   ganttThemeVariables,
   NORMALIZE_VARIABLE,
   THEME_VARIABLE,
+  PAGE_BACKGROUND_VARIABLE,
   BOOTSTRAP_VARIABLES,
   GANTT_VARIABLES,
   DEFAULT_MERMAID_THEME,
@@ -44,9 +46,7 @@ import {
   LABEL_DARK_COLOR,
   LABEL_INK_CANDIDATES,
   LABEL_EXCLUSIONS,
-  MIN_CONTRAST_RATIO,
   PAINTED_SHAPE_TAGS,
-  PAINTED_SHAPE_SELECTOR,
   MERMAID_CDN_URL,
 } from '../src/core/mermaid-bootstrap.js';
 import { READINESS_FLAGS, FATAL_REPORT_INDEX, publishFlag } from '../src/core/readiness-protocol.js';
@@ -220,8 +220,15 @@ test('normalizedInk repairs an ink it cannot parse instead of leaving it', () =>
   assert.equal(normalizedInk({ surface: null, ink: parseColor('#000000') }), null, 'no surface, no decision');
 });
 
-test('the AA threshold is the one the assertions name', () => {
-  assert.equal(MIN_CONTRAST_RATIO, 4.5);
+test('the ink decision turns over at the AA boundary, which is 4.5:1', () => {
+  // Behaviour, not the constant: #767676 is 4.54:1 on white, so an ink already
+  // there is left alone, and #777777 is 4.48:1, so it is replaced. A threshold
+  // moved either way changes one of these two answers.
+  assert.equal(normalizedInk({ surface: parseColor('#ffffff'), ink: parseColor('#767676') }), null);
+  assert.equal(
+    normalizedInk({ surface: parseColor('#ffffff'), ink: parseColor('#777777') }),
+    LABEL_DARK_COLOR,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -269,15 +276,85 @@ test('paintedSurfaceAt samples a sequence actor box', () => {
 test('paintedSurfaceAt never samples a non-geometry wrapper, whatever fill it claims', () => {
   // The class-diagram defect in one assertion: a `<g>` label container with a
   // fill on it is not paint. Neither is a transparent rect. Both must leave
-  // the canvas showing through.
+  // the canvas showing through. The `<g>` record is the behavioural half of
+  // this — the sampler has to ignore it, whatever the tag list happens to
+  // contain — and the `.includes` line guards the other half, that the DOM
+  // adapter never hands it one in the first place.
   assert.ok(!PAINTED_SHAPE_TAGS.includes('g'));
-  assert.equal(PAINTED_SHAPE_SELECTOR.includes('g,'), false);
 
   const shapes = [
     shape('g', 0, 0, 200, 200, '#1b2130'),
     shape('rect', 0, 0, 200, 200, 'rgba(0, 0, 0, 0)'),
   ];
   assert.deepEqual(paintedSurfaceAt(10, 10, shapes, CANVAS_WHITE), { r: 255, g: 255, b: 255, a: 1 });
+});
+
+test('paintedSurfaceAt ignores a record that does not say which element it came from', () => {
+  // `tag` is required, deliberately: defaulting a missing one to `rect` would
+  // let a caller that forgot to set it look like a painted shape.
+  const tagless = { x: 0, y: 0, width: 200, height: 200, fill: '#1b2130' };
+  assert.deepEqual(paintedSurfaceAt(10, 10, [tagless], CANVAS_WHITE), CANVAS_WHITE);
+});
+
+test('paintedSurfaceAt asks a shape’s own predicate instead of its box', () => {
+  // The real-geometry case: a diagonal path's bounding box covers the whole
+  // square, but its fill only covers one half. The predicate is what tells the
+  // sampler the corner is unpainted.
+  const halfPainted = {
+    ...shape('path', 0, 0, 100, 100, '#123456'),
+    contains: (x, y) => x >= y,
+  };
+
+  // Inside the box and inside the painted half: the path is the surface.
+  assert.deepEqual(paintedSurfaceAt(80, 20, [halfPainted], CANVAS_WHITE), { r: 0x12, g: 0x34, b: 0x56, a: 1 });
+
+  // Inside the box but outside the painted half: the canvas, not the path.
+  assert.deepEqual(paintedSurfaceAt(20, 80, [halfPainted], CANVAS_WHITE), CANVAS_WHITE);
+});
+
+test('paintedSurfaceAt treats a predicate that is not true as a miss', () => {
+  // A predicate is a claim that the point is covered; anything other than a
+  // literal `true` is not that claim, so it must not paint.
+  const falsy = { ...shape('circle', 0, 0, 100, 100, '#123456'), contains: () => undefined };
+  assert.deepEqual(paintedSurfaceAt(50, 50, [falsy], CANVAS_WHITE), CANVAS_WHITE);
+});
+
+test('label centres and shape records are measured in the same SVG-relative frame', async () => {
+  // The coordinate contract: both halves subtract the SVG's own client rect,
+  // so a diagram placed far down a page still samples correctly. The SVG sits
+  // at (400, 700); a 40×20 shape at (430, 712) is 30×12 relative to it, and a
+  // label over the same box centres at 50×22 relative — inside the shape. If
+  // either half stopped subtracting the origin, the shape would miss the point
+  // and the canvas would be sampled instead.
+  //
+  // The ink is chosen so the two possible answers differ: dark ink on the dark
+  // shape must be repaired to light, while dark ink on paper white is already
+  // 20:1 and would be left alone. So a repair proves the shape was found.
+  const offset = () => ({ x: 400, y: 700, width: 200, height: 200 });
+  const node = svgElement({
+    tag: 'rect',
+    box: { x: 430, y: 712, width: 40, height: 20 },
+    computed: { fill: 'rgb(27, 33, 48)' },
+  });
+  const label = svgElement({
+    tag: 'text',
+    text: 'Node',
+    box: { x: 430, y: 712, width: 40, height: 20 },
+    computed: { fill: 'rgb(20, 20, 20)' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    svgFactory: () => fakeSvg({ shapes: [node], texts: [label], rect: offset }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(
+    label.style.props.fill,
+    { value: LABEL_LIGHT_COLOR, priority: 'important' },
+    'the offset shape must be the sampled surface, or the frames disagree',
+  );
 });
 
 test('paintedSurfaceAt ignores a fill of none, zero opacity and zero fill-opacity', () => {
@@ -330,6 +407,106 @@ test('a point outside every shape is the canvas, not nothing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The page surface: the sheet the diagram is printed on
+// ---------------------------------------------------------------------------
+
+/** A style stub carrying only what {@link canvasColor} reads. */
+function canvasStyle({ backgroundColor = '', sheet = '' } = {}) {
+  return {
+    backgroundColor,
+    getPropertyValue: (name) => (name === PAGE_BACKGROUND_VARIABLE ? sheet : ''),
+  };
+}
+
+test('canvasColor composites an opaque body background over the paper', () => {
+  // style.css sets neither sheet nor element background, and a document whose
+  // body paints itself is the case where the element chain is the sheet.
+  assert.deepEqual(
+    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgb(10, 20, 30)' })),
+    { r: 10, g: 20, b: 30, a: 1 },
+  );
+});
+
+test('canvasColor falls back to paper when the body is transparent', () => {
+  // The common document: `body { background: transparent }` and nothing else,
+  // so the page is bare paper. This is the branch none of the six fixture
+  // cases reached, because they all passed a hardcoded canvas.
+  assert.deepEqual(
+    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' })),
+    { r: 255, g: 255, b: 255, a: 1 },
+  );
+  assert.deepEqual(canvasColor(canvasStyle(), undefined), { r: 255, g: 255, b: 255, a: 1 });
+});
+
+test('canvasColor composites a semi-transparent root over the paper', () => {
+  // 50% black over paper: the root is a wash, not a colour.
+  assert.deepEqual(
+    canvasColor(canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0.5)' }), canvasStyle()),
+    { r: 127.5, g: 127.5, b: 127.5, a: 1 },
+  );
+});
+
+test('canvasColor composites a semi-transparent body over a tinted root', () => {
+  // Root 20% black over paper, then body 50% white over that: both layers are
+  // translucent and the answer is the composite of the pair.
+  const surface = canvasColor(
+    canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0.2)' }),
+    canvasStyle({ backgroundColor: 'rgba(255, 255, 255, 0.5)' }),
+  );
+  // Root: 0.2 black over white → 204. Then 0.5 white over 204 → 229.5.
+  assert.deepEqual(surface, { r: 229.5, g: 229.5, b: 229.5, a: 1 });
+});
+
+test('canvasColor takes the sheet colour from --page-background, which owns it', () => {
+  // A theme paints the page through the `@page` rule, not through `body`. With
+  // the sheet declared black and a transparent body, the canvas is black — a
+  // body-only reading would answer paper white and be wrong.
+  assert.deepEqual(
+    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }), '#000000'),
+    { r: 0, g: 0, b: 0, a: 1 },
+  );
+});
+
+test('canvasColor paints the sheet first and an opaque body over it', () => {
+  // The page background is behind the element boxes, so an opaque body really
+  // does cover it — that is compositing, not a conflict. The ownership rule is
+  // about which property the sheet's colour comes *from*: when the element
+  // chain says nothing, the sheet variable is what shows.
+  assert.deepEqual(
+    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgb(255, 255, 255)' }), '#000000'),
+    { r: 255, g: 255, b: 255, a: 1 },
+    'an opaque body paints over the page background, as print does',
+  );
+
+  // The case that proves the variable is read at all: a theme that paints the
+  // page only through `@page` and leaves `body` transparent, which is what
+  // oled would be if it dropped its element rule.
+  assert.deepEqual(
+    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }), '#000000'),
+    { r: 0, g: 0, b: 0, a: 1 },
+  );
+});
+
+test('canvasColor ignores a hollow or absent sheet variable and uses the element chain', () => {
+  // `--page-background: ;` resolves to the empty string, and an absent one is
+  // the same answer: both mean the theme does not paint the sheet, so the
+  // fallback applies.
+  for (const sheet of ['', '   ']) {
+    assert.deepEqual(
+      canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgb(10, 20, 30)' }), sheet),
+      { r: 10, g: 20, b: 30, a: 1 },
+      `${JSON.stringify(sheet)} must fall back to the body`,
+    );
+  }
+});
+
+test('canvasColor composites a semi-transparent sheet over the paper', () => {
+  assert.deepEqual(canvasColor(canvasStyle(), canvasStyle(), 'rgba(0, 0, 0, 0.5)'), {
+    r: 127.5, g: 127.5, b: 127.5, a: 1,
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The label exclusions
 // ---------------------------------------------------------------------------
 
@@ -379,20 +556,21 @@ test('ganttThemeVariables returns an empty object when a theme declares none', (
   assert.deepEqual(ganttThemeVariables(() => '   '), {});
 });
 
-test('mermaidInitOptions merges theme variables only when there are some', () => {
+test('mermaidInitOptions carries theme variables only when there are some', () => {
   // The light themes must reach Mermaid with byte-identical options: an
   // absent `themeVariables` key is not the same document as one carrying `{}`.
   assert.equal(Object.hasOwn(mermaidInitOptions(), 'themeVariables'), false);
+  assert.equal(Object.hasOwn(mermaidInitOptions('base', undefined), 'themeVariables'), false);
 
   const withGantt = mermaidInitOptions('dark', { doneTaskBkgColor: '#1b2130' });
   assert.deepEqual(withGantt.themeVariables, { doneTaskBkgColor: '#1b2130' });
   assert.equal(withGantt.theme, 'dark');
 
-  // Merged, not replaced: a caller that also passes its own variables keeps
-  // them, and a caller's object is not mutated.
+  // Copied, so a caller's object is not mutated by a later change to the
+  // returned options.
   const callerVariables = { primaryColor: '#111111' };
-  const merged = mermaidInitOptions('base', callerVariables, { gridColor: '#222222' });
-  assert.deepEqual(merged.themeVariables, { primaryColor: '#111111', gridColor: '#222222' });
+  const options = mermaidInitOptions('base', callerVariables);
+  options.themeVariables.primaryColor = '#222222';
   assert.deepEqual(callerVariables, { primaryColor: '#111111' });
 });
 
@@ -474,12 +652,21 @@ function svgElement({
 }
 
 /** A fake SVG whose selector results the test declares. */
-function fakeSvg({ shapes = [], texts = [], foreignLeaves = [] } = {}) {
+function fakeSvg({ shapes = [], texts = [], foreignLeaves = [], rect = null } = {}) {
   const all = [...shapes, ...texts, ...foreignLeaves];
+  // Derived from the tag list rather than from the selector constant: the fake
+  // has to answer the query the adapter makes, and spelling that query here as
+  // "every painted tag" keeps the constant free to change shape without a test
+  // rewrite.
+  const shapeSelector = PAINTED_SHAPE_TAGS.join(',');
   return {
-    getBoundingClientRect: () => ({ x: 0, y: 0, width: 200, height: 200 }),
+    // `rect` is opt-in so a test can place the diagram somewhere other than
+    // the page origin; the render stub honours it. Default is the 200×200 box
+    // the surface tests assume.
+    __rect: rect,
+    getBoundingClientRect: rect ?? (() => ({ x: 0, y: 0, width: 200, height: 200 })),
     querySelectorAll(selector) {
-      if (selector === PAINTED_SHAPE_SELECTOR) return shapes;
+      if (selector === shapeSelector) return shapes;
       if (selector === 'text') return texts;
       if (selector === 'foreignObject *') return foreignLeaves;
       if (selector === 'foreignObject') return [];
@@ -507,6 +694,11 @@ function diagramNode(text) {
  *
  * The document throws on any selector the program is not expected to use, so
  * the fake pins the DOM contract instead of silently accepting anything.
+ *
+ * Every root-variable read and the `initialize` call are appended to one
+ * `events` log, so a test can assert ordering through the fake rather than by
+ * scanning the program's source text: the order is observable behaviour, the
+ * line positions are not.
  */
 function createPage({
   diagrams,
@@ -518,8 +710,9 @@ function createPage({
   svgFactory = () => fakeSvg(),
   rootVariables = {},
   canvas = 'rgb(255, 255, 255)',
+  sheet = '',
 } = {}) {
-  const calls = { initialize: null, rendered: [], loads: 0, removed: [] };
+  const calls = { initialize: null, rendered: [], loads: 0, removed: [], events: [] };
   const root = element();
   const body = element();
 
@@ -542,9 +735,20 @@ function createPage({
 
   const variables = { ...rootVariables, [NORMALIZE_VARIABLE]: normalizing ? '1' : '' };
   if (mermaidTheme !== undefined) variables[THEME_VARIABLE] = mermaidTheme;
+  if (sheet !== '') variables[PAGE_BACKGROUND_VARIABLE] = sheet;
+
+  const rootStyle = styleStub({ variables, backgroundColor: canvas });
+  // Record reads at the moment the program makes them, not at construction.
+  const recordingRootStyle = {
+    ...rootStyle,
+    getPropertyValue(name) {
+      calls.events.push({ kind: 'read', name });
+      return rootStyle.getPropertyValue(name);
+    },
+  };
 
   const computed = new Map([
-    [root, styleStub({ variables, backgroundColor: canvas })],
+    [root, recordingRootStyle],
     [body, styleStub({ variables, backgroundColor: 'rgba(0, 0, 0, 0)' })],
   ]);
 
@@ -562,18 +766,27 @@ function createPage({
   const runtime = {
     initialize(options) {
       calls.initialize = options;
+      calls.events.push({ kind: 'initialize', theme: options.theme });
     },
     async render(id, source) {
       calls.rendered.push({ id, source });
       if (source === failingText) throw new Error('Parse error on line 2');
       const node = diagrams.find((candidate) => candidate.textContent === source);
-      node.svg = { ...svgFactory(), getBoundingClientRect: () => ({ x: 0, y: 0, width: 120, height: 40 }) };
+      const rendered = svgFactory();
+      // The SVG's own client rect is what both halves of the normaliser use as
+      // their origin, so a fake may place it off the page origin. The default
+      // keeps the old 120×40 box at (0, 0).
+      node.svg = {
+        ...rendered,
+        getBoundingClientRect: rendered.__rect ?? (() => ({ x: 0, y: 0, width: 120, height: 40 })),
+      };
       return { svg: `<svg id="${id}"></svg>` };
     },
   };
 
   const loadRuntime = async () => {
     calls.loads++;
+    calls.events.push({ kind: 'loadRuntime' });
     if (runtimeFails) throw new Error('Failed to fetch dynamically imported module');
     return runtime;
   };
@@ -764,30 +977,45 @@ test('rootVariableValue treats an empty declaration as absent, with a per-read f
 
 test('the theme and the Gantt variables are read before Mermaid initialises, not after the render loop', async () => {
   // The order is the whole point: `mermaid.initialize` needs the resolved
-  // theme and the theme variables it merges, and it runs before any diagram is
-  // rendered. A read placed beside the normalisation opt-in would happen one
-  // step too late, and the behavioural tests would still pass because the fake
-  // captures the options object either way.
-  const source = await readFile(
-    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
-    'utf8',
+  // theme and the theme variables it merges, and it must run before any
+  // diagram is rendered. Asserted through the fake's event log rather than
+  // through line numbers in the source, so renaming a variable or moving a
+  // statement cannot fail this test while the order is unchanged.
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    mermaidTheme: 'dark',
+    rootVariables: { '--mermaid-gantt-task-fill': '#24304a' },
+    normalizing: true,
+  });
+
+  await run(page);
+
+  const kinds = page.calls.events.map((event) => event.kind);
+  const firstInitialize = kinds.indexOf('initialize');
+
+  assert.notEqual(firstInitialize, -1, 'mermaid.initialize must run');
+  assert.equal(kinds.indexOf('loadRuntime') < firstInitialize, true, 'the runtime is loaded before it is initialised');
+
+  const themeRead = page.calls.events.findIndex((event) => event.kind === 'read' && event.name === THEME_VARIABLE);
+  const ganttRead = page.calls.events.findIndex(
+    (event) => event.kind === 'read' && event.name === '--mermaid-gantt-task-fill',
   );
+  assert.ok(themeRead > -1, 'the theme must be read from the root before anything else decides');
+  assert.ok(ganttRead > -1, 'the Gantt variables must be read from the root');
+  assert.ok(themeRead < firstInitialize, 'the theme must be resolved before mermaid.initialize()');
+  assert.ok(ganttRead < firstInitialize, 'the Gantt variables must be resolved before mermaid.initialize()');
+  assert.equal(page.calls.events[firstInitialize].theme, 'dark', 'the read value is the one initialisation receives');
 
-  const themeRead = source.indexOf(`rootVariableValue(rootStyle, THEME_VARIABLE`);
-  const initialise = source.indexOf('mermaid.initialize(mermaidInitOptions(');
-  assert.ok(themeRead > -1, 'the theme must be read through the exported constant');
-  assert.ok(initialise > -1, 'the resolved theme must be the one initialisation receives');
-  assert.ok(themeRead < initialise, 'the theme must be resolved before mermaid.initialize()');
-
-  const ganttRead = source.indexOf('ganttThemeVariables(');
-  assert.ok(ganttRead > -1, 'the Gantt variables must be read through the exported contract');
-  assert.ok(ganttRead < initialise, 'the Gantt variables must be resolved before mermaid.initialize()');
-
-  // And the normalisation opt-in keeps reading the root after the render loop.
-  const renderLoop = source.indexOf('for (const [index, node] of nodes.entries())');
-  assert.ok(
-    source.indexOf('rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE)') > renderLoop,
-    'the normalisation opt-in is read after the render loop; that behaviour is unchanged',
+  // And the normalisation opt-in is read only after the render loop has put
+  // SVGs in the document: the read has to come after every render call.
+  const normalizeRead = page.calls.events.findIndex(
+    (event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE,
+  );
+  assert.ok(normalizeRead > firstInitialize, 'the opt-in is read after initialisation, at render time');
+  assert.equal(
+    page.calls.events.filter((event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE).length,
+    1,
+    'the opt-in is read once, not once per diagram',
   );
 });
 
@@ -954,7 +1182,7 @@ test('an opted-in theme never re-inks the sequence autonumber badge', async () =
   assert.deepEqual(badge.style.props, {}, 'the badge numeral is Mermaid’s, pinned by #17');
 });
 
-test('normalizeLabelColors reports what it inspected and what it repaired', () => {
+test('normalizeLabelColors reports per diagram what it inspected and what it repaired', () => {
   const dark = svgElement({ tag: 'rect', box: { x: 0, y: 0, width: 100, height: 40 }, computed: { fill: 'rgb(27, 33, 48)' } });
   const fixed = svgElement({
     tag: 'text', text: 'A', box: { x: 10, y: 10, width: 20, height: 10 }, computed: { fill: 'rgb(20, 24, 40)' },
@@ -972,7 +1200,42 @@ test('normalizeLabelColors reports what it inspected and what it repaired', () =
 
   const report = normalizeLabelColors(doc, computedStyle);
 
-  assert.deepEqual(report, { checked: 2, adjusted: 1 });
+  assert.deepEqual(report, [{ index: 0, checked: 2, adjusted: 1 }]);
+});
+
+test('the sheet property the normaliser reads is the one page geometry owns', async () => {
+  // The bootstrap cannot import this name (its source is inlined as browser
+  // code), so the agreement is pinned here instead: one owner writes the
+  // `@page` rule, the other reads the resolved value back.
+  const { PAGE_GEOMETRY_VARIABLES } = await import('../src/core/page-geometry.js');
+  assert.equal(PAGE_BACKGROUND_VARIABLE, PAGE_GEOMETRY_VARIABLES.background);
+});
+
+test('the debug report carries the normalisation counts per diagram', async () => {
+  // The counts are load-bearing in the report now, not discarded: a render
+  // check can see that the normaliser ran and on which diagram, which is the
+  // reason to compute them at all.
+  const node = svgElement({ tag: 'rect', box: { x: 0, y: 0, width: 100, height: 40 }, computed: { fill: 'rgb(27, 33, 48)' } });
+  const label = svgElement({
+    tag: 'text', text: 'A', box: { x: 10, y: 10, width: 20, height: 10 }, computed: { fill: 'rgb(20, 24, 40)' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    svgFactory: () => fakeSvg({ shapes: [node], texts: [label] }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(page.win[READINESS_FLAGS.mermaidDebug][0].normalization, { checked: 1, adjusted: 1 });
+});
+
+test('the debug report carries no normalisation counts for a theme that did not opt in', async () => {
+  const page = createPage({ diagrams: [diagramNode('graph TD; A-->B')], normalizing: false });
+
+  await run(page);
+
+  assert.equal(Object.hasOwn(page.win[READINESS_FLAGS.mermaidDebug][0], 'normalization'), false);
 });
 
 test('the bundled themes declare the Gantt variables only where they paint dark bars', async () => {
@@ -1038,23 +1301,30 @@ test('the program can publish readiness through the protocol publishFlag adapter
 });
 
 test('the program reads the opt-in through the variable name it exports', async () => {
-  const source = await readFile(
-    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
-    'utf8',
-  );
-  assert.ok(source.includes('getComputedStyle'), 'the opt-in is read at render time');
+  // Behavioural half: a theme that declares the property the module exports,
+  // under that exact name, is opted in. That is the cross-language contract —
+  // the name reaching `getComputedStyle` is the one the stylesheet wrote.
+  const label = svgElement({
+    tag: 'text', text: 'A', box: { x: 10, y: 10, width: 20, height: 10 }, computed: { fill: 'rgb(20, 24, 40)' },
+  });
+  const node = svgElement({ tag: 'rect', box: { x: 0, y: 0, width: 100, height: 40 }, computed: { fill: 'rgb(27, 33, 48)' } });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    svgFactory: () => fakeSvg({ shapes: [node], texts: [label] }),
+  });
 
-  // The read lives behind `rootVariableValue`, which takes the exported
-  // constant as its argument: the name still has one owner, and the trim and
-  // empty-as-absent rule is stated once for every root property.
+  await run(page);
+
   assert.ok(
-    source.includes('getPropertyValue(name)'),
-    'custom properties are read through the one helper that normalises them',
+    page.calls.events.some((event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE),
+    'the opt-in must be read by the name the module exports, at render time',
   );
-  assert.ok(
-    source.includes('rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE)'),
-    'the variable name must come from the exported constant, not a literal',
-  );
+  assert.deepEqual(label.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+
+  // And the runtime URL stays one exported constant, which assembly inlines
+  // through the module rather than spelling again.
+  const source = await readFile(new URL('../src/core/mermaid-bootstrap.js', import.meta.url), 'utf8');
   assert.ok(source.includes(MERMAID_CDN_URL), 'the runtime URL is a single exported constant');
 });
 
