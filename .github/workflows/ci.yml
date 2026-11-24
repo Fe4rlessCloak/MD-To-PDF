@@ -1,0 +1,49 @@
+name: CI
+#
+# The unit suite is the only automated check this repository has, and it is
+# browser-free: no test launches Puppeteer. So CI does exactly what a
+# contributor runs locally — install from the lockfile, run `npm test` — and
+# nothing else. No browser download, no shared-library setup, no per-machine
+# paths. Anything that made this job depend on a Chromium binary would turn a
+# few-second check into a flaky one, and the whole point is that it runs on
+# every push.
+#
+# This contract is asserted by test/ci-workflow.test.js, which reads this file
+# as text. Changing a trigger, the Node version, the install command or the
+# test command without updating that guard fails `npm test` locally and here.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: unit suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # puppeteer is a runtime dependency, not a devDependency, so `npm ci` runs
+    # its postinstall and fetches a browser unless this is set. The suite needs
+    # no browser, so the download is skipped rather than paid for.
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # LTS, and at or above the engines floor of >=18 in package.json.
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      - name: Run the unit suite
+        run: npm test
