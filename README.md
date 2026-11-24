@@ -261,13 +261,17 @@ actually painted behind its centre, and repainted only when its current ink fall
 AA ratio of 4.5:1. The surface is found by sampling the painted geometry (`rect`, `path`,
 `polygon`, `circle`, `ellipse`) in paint order, honouring `fill-opacity` and `opacity` and
 compositing over the page's own background colour; a group wrapper is never sampled, because a
-`<g>` inherits a fill without painting one. That is what makes a Gantt task name inside its bar,
+`<g>` inherits a fill without painting one. Containment is the geometry's own answer, not its
+bounding box: a `path` or `circle` is asked through `isPointInFill`, so a diagonal edge or a pie
+slice cannot claim an unpainted corner the way a box would. The page colour is read from
+`--page-background`, which owns the `@page` rule, falling back to the `html`/`body` background
+only when a stylesheet declares neither. That is what makes a Gantt task name inside its bar,
 a second one overflowing onto the page, a class name in a light box under a dark group, and an
 author `style A fill:#1b2130` all decide correctly without a diagram family being named.
 
 The colour parsing, compositing, luminance, contrast and sampling functions are exported and
 tested without a browser ([`test/mermaid-bootstrap.test.js`](test/mermaid-bootstrap.test.js)); the
-DOM adapter that reads rects and computed styles is exercised by the rendered fixtures.
+DOM Adapter that reads geometry and computed styles is exercised by the rendered fixtures.
 
 One exclusion is deliberate: the sequence autonumber badge (`text.sequenceNumber`) is never
 re-inked. Mermaid draws a light numeral inside a disc it fills from its own generated rule, which
