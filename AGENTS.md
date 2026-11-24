@@ -30,7 +30,7 @@ Module inventory, usage and the theme table live in the [README](README.md); voc
   - **Page geometry** — `pageGeometry()` in `src/core/page-geometry.js` owns the `@page` rule and `PAGE_GEOMETRY_VARIABLES`. A theme supplies variables and never declares `@page`.
   - **Readiness protocol** — `READINESS_FLAGS` in `src/core/readiness-protocol.js` owns every flag name. Never write a flag as a bare string literal in a bootstrap or the renderer.
   - **Document options** — `createDocumentOptions()` in `src/core/document-options.js` owns the option set, its defaults, and the accepted and rejected flag tables. A new flag is declared there before it is wired anywhere.
-  - **Print stylesheets** — `stylesheetPayload()` in `src/core/print-styles/print-styles.js` owns the layer list and its order. A theme is not a print stylesheet: it is injected last, above them.
+  - **Print stylesheets** — `stylesheetPayload()` in `src/core/print-styles/print-styles.js` owns the layer list and its order. A theme is injected between the base defaults and the containment and math rules that must outrank it, so ordering is load-bearing; do not hand-assemble layers in `build-html.js`.
   - **Mermaid styling** — `MERMAID_VARIABLES` in `src/core/mermaid-styles/mermaid-styles.js` owns the theme variable contract and the shared selector block. A theme supplies variables, not selectors.
 - **Add depth behind the existing seam.** When two modules need the same fact, one of them owns it; do not thread a parameter through the pipeline to avoid deciding which.
 - **The module map is the README's** — [File Overview](README.md#file-overview). Do not grow a second copy in this file.
