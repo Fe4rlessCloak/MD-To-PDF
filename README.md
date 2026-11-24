@@ -261,13 +261,17 @@ actually painted behind its centre, and repainted only when its current ink fall
 AA ratio of 4.5:1. The surface is found by sampling the painted geometry (`rect`, `path`,
 `polygon`, `circle`, `ellipse`) in paint order, honouring `fill-opacity` and `opacity` and
 compositing over the page's own background colour; a group wrapper is never sampled, because a
-`<g>` inherits a fill without painting one. That is what makes a Gantt task name inside its bar,
+`<g>` inherits a fill without painting one. Containment is the geometry's own answer, not its
+bounding box: a `path` or `circle` is asked through `isPointInFill`, so a diagonal edge or a pie
+slice cannot claim an unpainted corner the way a box would. The page colour is read from
+`--page-background`, which owns the `@page` rule, falling back to the `html`/`body` background
+only when a stylesheet declares neither. That is what makes a Gantt task name inside its bar,
 a second one overflowing onto the page, a class name in a light box under a dark group, and an
 author `style A fill:#1b2130` all decide correctly without a diagram family being named.
 
 The colour parsing, compositing, luminance, contrast and sampling functions are exported and
 tested without a browser ([`test/mermaid-bootstrap.test.js`](test/mermaid-bootstrap.test.js)); the
-DOM adapter that reads rects and computed styles is exercised by the rendered fixtures.
+DOM Adapter that reads geometry and computed styles is exercised by the rendered fixtures.
 
 One exclusion is deliberate: the sequence autonumber badge (`text.sequenceNumber`) is never
 re-inked. Mermaid draws a light numeral inside a disc it fills from its own generated rule, which
@@ -397,7 +401,7 @@ Core pipeline, in call order:
 - [`src/core/load-input.js`](src/core/load-input.js) — Markdown and stylesheet file loading
 - [`src/core/render-markdown.js`](src/core/render-markdown.js) — Markdown rendering; the Mermaid, block-math, and inline-math tokenizers live here
 - [`src/core/readiness-protocol.js`](src/core/readiness-protocol.js) — the readiness flag names, the waiting step, and the error-report classification; one source of truth for both the injected browser programs and the renderer
-- [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the surface-aware contrast normaliser (colour parsing, alpha compositing, relative luminance and the ink decision, all pure and exported), the Gantt `themeVariables` bridge, and render diagnostics; inlined into the document at assembly time
+- [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the surface-aware contrast normaliser (colour parsing, alpha compositing, relative luminance and the ink decision, all pure and exported), the Gantt `themeVariables` Adapter, and render diagnostics; inlined into the document at assembly time
 - [`src/core/katex-bootstrap.js`](src/core/katex-bootstrap.js) — the KaTeX browser program and the only place its CDN version is written; inlined into the document at assembly time
 - [`src/core/css-declarations.js`](src/core/css-declarations.js) — reads custom-property declarations out of CSS text: which names a stylesheet declares, which it leaves hollow, and what it declares once comments are removed; shared by page geometry and Mermaid styling
 - [`src/core/page-geometry.js`](src/core/page-geometry.js) — page geometry: the `@page` rule, the optional named cover page, the theme variable names, the theme invariants those variables must satisfy, and the browser's print preference
