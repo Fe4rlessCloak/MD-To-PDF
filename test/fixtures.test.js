@@ -47,6 +47,26 @@ function countFences(markdown, language) {
 }
 
 /**
+ * The body of every fenced block of a language, in source order.
+ *
+ * The companion to {@link countFences}: the count says how many there are and
+ * this says what is in them, so a test asserting "the fixture declares a Gantt
+ * case" reads the source through one fence parser rather than a second regex
+ * written beside it.
+ *
+ * @param {string} markdown
+ * @param {string} language
+ * @returns {Array<string>} Fenced bodies, without their fences.
+ */
+function fenceBodies(markdown, language) {
+  const pattern = new RegExp(
+    `^ {0,3}\`{3,}[ \\t]*${language}[ \\t]*\\n([\\s\\S]*?)^ {0,3}\`{3,}[ \\t]*$`,
+    'gm',
+  );
+  return [...markdown.matchAll(pattern)].map((match) => match[1]);
+}
+
+/**
  * Decode the entities the renderer writes into math wrappers, recovering the
  * LaTeX exactly as KaTeX would read it back through `textContent`.
  *
@@ -333,13 +353,11 @@ test('the diagram fixture pins the label-surface cases the normaliser decides', 
   // Every case below is a surface the old `.node`-only normaliser could not
   // see, and each one is also a pure-function case in
   // `mermaid-bootstrap.test.js`. The fixture is what makes them real DOM: if
-  // Mermaid changes the markup, the unit tests keep passing and the rendered
+  // Mermaid changes the markup, the browser-free tests keep passing and the rendered
   // check fails, which is the split the ticket asks for.
   const { markdown } = await convertFixture('test-fixtures.md');
 
-  const fences = [...markdown.matchAll(/^ {0,3}```[ \t]*mermaid[ \t]*\n([\s\S]*?)^ {0,3}```/gm)].map(
-    (match) => match[1],
-  );
+  const fences = fenceBodies(markdown, 'mermaid');
   const declares = (pattern) => fences.some((source) => pattern.test(source));
 
   /** The task-name part of a Gantt task line, i.e. what precedes its colon. */

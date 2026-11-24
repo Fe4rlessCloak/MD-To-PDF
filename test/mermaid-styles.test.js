@@ -25,6 +25,7 @@ import {
   requiredVariableNames,
   optionalVariableNames,
   missingVariables,
+  ruleList,
   selectorList,
   canonicalSelector,
   redeclaredSelectors,
@@ -47,36 +48,15 @@ const block = () => mermaidStylesheetSource();
 const bootstrapOwned = new Set(BOOTSTRAP_VARIABLES);
 
 /**
- * Split comment-stripped CSS into rules: the selector list of each, and its
- * declaration body.
+ * The rules of the shared block, from the module that owns the split.
  *
- * `selectorList` answers "which selectors appear", which is not enough to say
- * *which* declaration sits under one. A rule that paints a shape and a rule
- * that inks a label can name the same element family, and telling them apart is
- * exactly what the sequence-diagram fixes depend on.
- *
- * At-rule preludes are dropped and their inner rules kept, as in
- * `selectorList`.
- *
- * @param {string} css
- * @returns {Array<{selectors: Array<string>, body: string}>}
+ * `ruleList` answers "which declaration sits under which selector", which is
+ * what `selectorList` cannot: a rule that paints a shape and a rule that inks a
+ * label can name the same element family, and telling them apart is exactly
+ * what the sequence-diagram fixes depend on. This used to be a second copy of
+ * that parse living in this file; it is now the module's own.
  */
-function rules(css) {
-  const withoutComments = stripComments(css);
-  const found = [];
-
-  for (const match of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const prelude = match[1].trim();
-    if (!prelude || prelude.startsWith('@')) continue;
-
-    found.push({
-      selectors: prelude.split(',').map((selector) => selector.trim()).filter(Boolean),
-      body: match[2].trim(),
-    });
-  }
-
-  return found;
-}
+const rules = (css) => ruleList(css);
 
 /**
  * The body of the `@container style(<variable>)` block, brace-matched.
@@ -387,7 +367,7 @@ test('bootstrap-owned properties are recognised beside the block contract, and a
   const ganttTypo = `${GANTT_VARIABLES[1].name}-drak`;
   assert.ok(
     !bootstrapOwned.has(ganttTypo),
-    `${ganttTypo} must not be recognised; the bridge maps exact names`,
+    `${ganttTypo} must not be recognised; the Adapter maps exact names`,
   );
 
   const typoDeclarations = [...stripComments(`:root { ${typo}: dark; }`).matchAll(/(--mermaid-[\w-]+)\s*:/g)]

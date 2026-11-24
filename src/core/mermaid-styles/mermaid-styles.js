@@ -172,6 +172,47 @@ export function optionalVariableNames() {
 export { stripComments };
 
 /**
+ * Every rule a stylesheet declares, as the selector list of each and its
+ * declaration body.
+ *
+ * This is the owner of the "split a comment-stripped stylesheet into prelude
+ * and body" step: {@link selectorList} answers which selectors appear by
+ * flattening this, and a caller that needs to know *which* declaration sits
+ * under a selector reads the same walk instead of writing a second one. A rule
+ * that paints a shape and a rule that inks a label can name the same element
+ * family, and telling them apart is exactly what the sequence-diagram checks
+ * depend on.
+ *
+ * At-rule preludes are dropped and their inner rules kept: the pattern walks
+ * the whole text, so a `@container` or `@media` wrapper contributes its inner
+ * rules without appearing as one of them.
+ *
+ * @param {string} css
+ * @returns {Array<{selectors: Array<string>, body: string}>} In source order.
+ */
+export function ruleList(css) {
+  const withoutComments = stripComments(css);
+  const rules = [];
+
+  const preludePattern = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = preludePattern.exec(withoutComments)) !== null) {
+    const prelude = match[1].trim();
+    if (!prelude || prelude.startsWith('@')) continue;
+
+    const selectors = prelude
+      .split(',')
+      .map((selector) => selector.trim().replace(/\s+/g, ' '))
+      .filter(Boolean);
+    if (selectors.length === 0) continue;
+
+    rules.push({ selectors, body: match[2].trim() });
+  }
+
+  return rules;
+}
+
+/**
  * Selectors a stylesheet declares, with any `@container`/`@media` wrapper
  * stripped and grouping split apart.
  *
@@ -181,25 +222,7 @@ export { stripComments };
  * @returns {Array<string>} Trimmed selector strings, in source order.
  */
 export function selectorList(css) {
-  const withoutComments = stripComments(css);
-  const selectors = [];
-
-  // Every `{` starts a block; the text before it is a selector or an at-rule
-  // prelude. At-rule preludes are dropped here and their inner rules picked up
-  // by the same pass, because the regex walks the whole text.
-  const preludePattern = /([^{}]+)\{/g;
-  let match;
-  while ((match = preludePattern.exec(withoutComments)) !== null) {
-    const prelude = match[1].trim();
-    if (!prelude || prelude.startsWith('@')) continue;
-
-    for (const selector of prelude.split(',')) {
-      const cleaned = selector.trim().replace(/\s+/g, ' ');
-      if (cleaned) selectors.push(cleaned);
-    }
-  }
-
-  return selectors;
+  return ruleList(css).flatMap((rule) => rule.selectors);
 }
 
 /**
