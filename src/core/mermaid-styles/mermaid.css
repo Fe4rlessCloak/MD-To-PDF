@@ -33,11 +33,17 @@
  *    declaration would be dropped, while `inline-size` would create a real
  *    container and change which element the query resolves against.
  *
- * 4. Ink is split by surface. Text on bare canvas (sequence messages, loop and
- *    edge labels) needs the canvas ink; text inside a filled shape needs the
- *    shape ink. Collapsing the two is what produced the dark theme's
- *    unreadable labels, where light canvas ink landed inside light-filled
- *    boxes.
+ * 4. Ink is split by surface, and the split is decided by specificity rather
+ *    than by source order. Text on bare canvas (sequence messages, loop
+ *    conditions, edge labels, titles) needs the canvas ink; text sitting on a
+ *    filled shape — a node, an actor box, a note, a loop's label tab or the
+ *    word `loop` on it — needs the shape ink. Collapsing the two is what
+ *    produced the dark theme's unreadable labels, where light canvas ink landed
+ *    inside light-filled boxes. The canvas rule matches
+ *    `text:not(.sequenceNumber)`, and `:not()` contributes its argument's
+ *    specificity, so a two-class selector written later still loses to it;
+ *    every on-shape rule therefore names its element type (`text.noteText`,
+ *    `text.actor`, `text.labelText`) and its nested `tspan`.
  */
 
 /* --- The canvas --------------------------------------------------------- */
@@ -100,19 +106,50 @@
 }
 
 /*
- * Shape ink after canvas ink, so a label inside a shape wins on source order
- * where both match. `text.actor` and `text.note` are siblings of the shapes
- * they sit on rather than children of them, which is why the element selectors
- * are stated as well as the class ones.
+ * Shape ink after canvas ink.
+ *
+ * Source order alone is not enough, which is what this rule got wrong. The
+ * canvas-ink rule above matches `text:not(.sequenceNumber)`; `:not()`
+ * contributes its argument's specificity, so that selector scores two classes
+ * and two types. `.mermaid svg .noteText` scores two classes and one type and
+ * therefore *loses* despite being written later, and `.mermaid svg .labelText`
+ * loses the same way. Stating the element type — `text.noteText`,
+ * `text.labelText`, `text.actor` — ties the first and outranks the second, and
+ * the `tspan` descendant form outranks both, which is why nested spans are
+ * named rather than left to inherit.
+ *
+ * `text.actor` needs a rule of its own for a further reason: Mermaid puts
+ * `class="actor"` on the participant rectangle *and* on the label beside it,
+ * and they are siblings inside the same `<g>`, so no descendant selector
+ * reaches the label. Without this rule the label has no ink at all once the
+ * fill rule stops matching it.
+ *
+ * `text.labelText` is the same story with a different shape: Mermaid draws a
+ * loop's tab as `polygon.labelBox` filled with its own light colour and writes
+ * the word `loop` into a sibling `text.labelText`. The `.labelBox text` form
+ * below matches nothing, because the text is a sibling rather than a child, so
+ * the tab's word needs the element-qualified sibling selector too. `.loopText`
+ * is deliberately NOT in this list: that is the loop's condition, drawn on the
+ * loop rectangle's transparent interior over the page, so it belongs to the
+ * canvas ink above.
+ *
+ * The `.note text`/`.note tspan`/`.labelBox text`/`.labelBox tspan` descendant
+ * forms are kept as belt-and-braces for Mermaid versions that nest a label
+ * inside its shape; in the DOM this project renders they match nothing,
+ * because the label is a sibling of the shape. They are inert, not load-
+ * bearing — the sibling selectors above are what do the work.
  */
 .mermaid svg .nodeLabel,
-.mermaid svg .noteText,
 .mermaid svg .node text,
 .mermaid svg .node tspan,
-.mermaid svg .actor text,
-.mermaid svg .actor tspan,
+.mermaid svg text.noteText,
+.mermaid svg text.noteText tspan,
 .mermaid svg .note text,
 .mermaid svg .note tspan,
+.mermaid svg text.actor,
+.mermaid svg text.actor tspan,
+.mermaid svg text.labelText,
+.mermaid svg text.labelText tspan,
 .mermaid svg .labelBox text,
 .mermaid svg .labelBox tspan,
 .mermaid svg .cluster .cluster-label text,
@@ -132,13 +169,22 @@
  * The weight is unconditional while the colour is opt-in, because the weight
  * is per-theme typographic intent (the high-contrast theme wants a heavier
  * rule) and is inert without a stroke to widen.
+ *
+ * `rect.actor` rather than `.actor`, here and in the two rules below. Mermaid
+ * writes `class="actor"` onto the participant shape *and* onto the `<text>`
+ * label that sits beside it, so a bare `.actor` paints the label with the
+ * shape's fill and stroke — on the dark theme that is near-white ink inside a
+ * near-white box, and the participant names disappear. `text.actor` and
+ * `g.actor-man` are therefore untouched: the first gets the on-shape ink, the
+ * second is a group whose children are lines and a circle Mermaid strokes
+ * itself.
  */
 .mermaid svg .node rect,
 .mermaid svg .node circle,
 .mermaid svg .node ellipse,
 .mermaid svg .node polygon,
 .mermaid svg .node path,
-.mermaid svg .actor,
+.mermaid svg rect.actor,
 .mermaid svg .note,
 .mermaid svg .labelBox,
 .mermaid svg .cluster rect {
@@ -166,7 +212,7 @@
   .mermaid svg .node ellipse,
   .mermaid svg .node polygon,
   .mermaid svg .node path,
-  .mermaid svg .actor,
+  .mermaid svg rect.actor,
   .mermaid svg .note,
   .mermaid svg .labelBox,
   .mermaid svg .cluster rect {
@@ -209,7 +255,7 @@
   .mermaid svg .node ellipse,
   .mermaid svg .node polygon,
   .mermaid svg .node path,
-  .mermaid svg .actor,
+  .mermaid svg rect.actor,
   .mermaid svg .note,
   .mermaid svg .labelBox,
   .mermaid svg .cluster rect {
@@ -271,6 +317,17 @@
  * An edge label sits on the canvas and crosses edges. On a dark page it needs
  * an opaque plate or the line strikes through the text; on a light page
  * Mermaid's own chip is correct.
+ *
+ * `opacity: 1` is the half of this rule that was missing. Mermaid emits
+ * `#mermaid-N .edgeLabel rect { opacity: 0.5 }` in its own generated style
+ * element, so filling the plate with the theme colour is not enough: at 50%
+ * the connector line underneath still shows through the glyphs. The plate is an
+ * SVG rectangle painted by `fill`, and `opacity` on it must be forced with
+ * `!important` because Mermaid's rule is an ID selector and outranks any class
+ * selector regardless of specificity. `.labelBkg` carries an
+ * `rgba(…, 0.5)` background rather than an opacity, and only the `background`
+ * shorthand can replace a colour carrying its own alpha; both are stated so
+ * whichever plate a Mermaid version emits is opaque.
  */
 @container style(--mermaid-edge-label-bg) {
   .mermaid svg .edgeLabel rect,
@@ -278,10 +335,12 @@
   .mermaid svg .edgeLabel .labelBkg {
     fill: var(--mermaid-edge-label-bg) !important;
     background: var(--mermaid-edge-label-bg) !important;
+    opacity: 1 !important;
     stroke: none !important;
   }
 
   .mermaid svg .edgeLabel foreignObject {
     background: var(--mermaid-edge-label-bg) !important;
+    opacity: 1 !important;
   }
 }
