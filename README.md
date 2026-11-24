@@ -185,6 +185,8 @@ Mermaid rendering is configured by [`mermaidInitOptions()`](src/core/mermaid-boo
 
 - `theme: 'base'` by default, or the theme a stylesheet selects through
   [`THEME_VARIABLE`](src/core/mermaid-bootstrap.js) (`--mermaid-theme`)
+- `themeVariables`, only when the stylesheet declares one of the Gantt bar fills
+  (`--mermaid-gantt-*`); a theme that declares none reaches Mermaid with no such key
 - `startOnLoad: false`
 - print-safe rendering behavior
 
@@ -253,6 +255,24 @@ assembly time — then strips the inline text colours after render so the
 theme governs every label evenly. The OLED, warm paper, high contrast, and compact themes opt in;
 the default theme leaves author colours untouched. Author **fill** colours are always preserved.
 
+The correction is a measurement, not a per-family rule. Every visible label in every rendered
+diagram — SVG `<text>` plus leaf text inside a `foreignObject` — is checked against the colour
+actually painted behind its centre, and repainted only when its current ink falls below the WCAG
+AA ratio of 4.5:1. The surface is found by sampling the painted geometry (`rect`, `path`,
+`polygon`, `circle`, `ellipse`) in paint order, honouring `fill-opacity` and `opacity` and
+compositing over the page's own background colour; a group wrapper is never sampled, because a
+`<g>` inherits a fill without painting one. That is what makes a Gantt task name inside its bar,
+a second one overflowing onto the page, a class name in a light box under a dark group, and an
+author `style A fill:#1b2130` all decide correctly without a diagram family being named.
+
+The colour parsing, compositing, luminance, contrast and sampling functions are exported and
+tested without a browser ([`test/mermaid-bootstrap.test.js`](test/mermaid-bootstrap.test.js)); the
+DOM adapter that reads rects and computed styles is exercised by the rendered fixtures.
+
+One exclusion is deliberate: the sequence autonumber badge (`text.sequenceNumber`) is never
+re-inked. Mermaid draws a light numeral inside a disc it fills from its own generated rule, which
+the sampler cannot see, so it is listed in `LABEL_EXCLUSIONS` rather than measured.
+
 ### Mermaid theme selection
 
 A theme may also select one of Mermaid's built-in themes by defining `--mermaid-theme`, read at
@@ -264,10 +284,18 @@ resolves those from its theme variables rather than from a selector. Every light
 property and Mermaid initialises with `base`, the variable-driven theme whose palette those themes
 were designed around.
 
+Mermaid's `dark` theme does not darken the three Gantt task-bar fills: a completed bar stays
+`lightgrey` and an in-progress bar a light blue whatever theme is named, because Mermaid treats
+them as a status pair rather than as surfaces. A theme therefore supplies
+`--mermaid-gantt-task-fill`, `--mermaid-gantt-done-fill` and `--mermaid-gantt-active-fill`, and the
+program hands whichever it declares to `mermaid.initialize` as `themeVariables`; the OLED theme
+declares all three and no light theme declares any. A theme that declares none reaches Mermaid with
+no `themeVariables` key at all, so its assembled document is unchanged.
+
 Both root properties are owned by the browser program and published together as
-`BOOTSTRAP_VARIABLES`, which is what lets the styling contract test tell a program-owned name from
-one the shared block reads. Neither belongs in the required set: a theme that omits them is stating
-a choice, not shipping half a palette.
+`BOOTSTRAP_VARIABLES`, alongside the Gantt bar fills, which is what lets the styling contract test
+tell a program-owned name from one the shared block reads. None belongs in the required set: a
+theme that omits them is stating a choice, not shipping half a palette.
 
 ### Page geometry
 
@@ -369,7 +397,7 @@ Core pipeline, in call order:
 - [`src/core/load-input.js`](src/core/load-input.js) — Markdown and stylesheet file loading
 - [`src/core/render-markdown.js`](src/core/render-markdown.js) — Markdown rendering; the Mermaid, block-math, and inline-math tokenizers live here
 - [`src/core/readiness-protocol.js`](src/core/readiness-protocol.js) — the readiness flag names, the waiting step, and the error-report classification; one source of truth for both the injected browser programs and the renderer
-- [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the label-normalisation luminance rule, and render diagnostics; inlined into the document at assembly time
+- [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the surface-aware contrast normaliser (colour parsing, alpha compositing, relative luminance and the ink decision, all pure and exported), the Gantt `themeVariables` bridge, and render diagnostics; inlined into the document at assembly time
 - [`src/core/katex-bootstrap.js`](src/core/katex-bootstrap.js) — the KaTeX browser program and the only place its CDN version is written; inlined into the document at assembly time
 - [`src/core/css-declarations.js`](src/core/css-declarations.js) — reads custom-property declarations out of CSS text: which names a stylesheet declares, which it leaves hollow, and what it declares once comments are removed; shared by page geometry and Mermaid styling
 - [`src/core/page-geometry.js`](src/core/page-geometry.js) — page geometry: the `@page` rule, the optional named cover page, the theme variable names, the theme invariants those variables must satisfy, and the browser's print preference

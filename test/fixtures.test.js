@@ -328,3 +328,56 @@ test('the diagram fixture exercises the diagram families the theme selection rea
     'every declared family must reach the document as its own container',
   );
 });
+
+test('the diagram fixture pins the label-surface cases the normaliser decides', async () => {
+  // Every case below is a surface the old `.node`-only normaliser could not
+  // see, and each one is also a pure-function case in
+  // `mermaid-bootstrap.test.js`. The fixture is what makes them real DOM: if
+  // Mermaid changes the markup, the unit tests keep passing and the rendered
+  // check fails, which is the split the ticket asks for.
+  const { markdown } = await convertFixture('test-fixtures.md');
+
+  const fences = [...markdown.matchAll(/^ {0,3}```[ \t]*mermaid[ \t]*\n([\s\S]*?)^ {0,3}```/gm)].map(
+    (match) => match[1],
+  );
+  const declares = (pattern) => fences.some((source) => pattern.test(source));
+
+  /** The task-name part of a Gantt task line, i.e. what precedes its colon. */
+  const taskNames = (source) =>
+    source
+      .split('\n')
+      .filter((line) => /^\s+\S/.test(line) && /:/.test(line) && /\d+d\s*$/.test(line))
+      .map((line) => line.slice(0, line.indexOf(':')).trim());
+
+  assert.ok(
+    fences.some((source) => /^gantt/.test(source) && /:done/.test(source) && /:active/.test(source)),
+    'the Gantt case must declare a done task and an active task, so both bar fills are painted',
+  );
+  assert.ok(
+    fences.some((source) => {
+      if (!/^gantt/.test(source)) return false;
+      const names = taskNames(source);
+      // An inside-bar label needs a task short enough to hold its name, and an
+      // outside-bar label needs one long enough to overflow it. Both must be
+      // in the same chart or the two surfaces are never compared in one render.
+      return names.some((name) => name.length < 20) && names.some((name) => name.length > 45);
+    }),
+    'the Gantt case must carry a short task (label inside the bar) and a long one (label outside it)',
+  );
+
+  assert.ok(declares(/^classDiagram/), 'the class case pins the non-painting group wrapper');
+  assert.ok(
+    fences.some((source) => /^stateDiagram/.test(source) && /state \w+ \{[\s\S]*state \w+ \{/.test(source)),
+    'the state case must nest one composite state inside another',
+  );
+  assert.ok(
+    fences.some(
+      (source) => /fill:#[0-9a-f]{6}/i.test(source) && /fill:#f[0-9a-f]{5}/i.test(source),
+    ),
+    'the styled-fill case must declare both a dark and a light author fill',
+  );
+  assert.ok(
+    fences.some((source) => /<br\/?>/.test(source) && /-->/.test(source)),
+    'the edge-label case must declare a multi-line edge label',
+  );
+});

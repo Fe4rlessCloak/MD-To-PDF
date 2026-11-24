@@ -56,6 +56,28 @@
     --mermaid-line: #c8cbe4;
     --mermaid-edge-label-bg: #000000;
     --mermaid-badge-ink: #f0f2ff;
+
+    /* Gantt bar surfaces. Mermaid's own `dark` theme leaves these three light
+       whatever theme is selected: a completed bar stays `lightgrey` (measured
+       rgb(211,211,211), relative luminance 0.65) and an in-progress bar stays
+       a light blue (rgb(129,177,219)). Mermaid treats them as a status pair,
+       not as surfaces, so on a black sheet they are the one glaring family
+       left — and no selector can reach them, because a Gantt bar is a
+       `<rect class="task done1">` painted from a theme variable Mermaid
+       resolves before any stylesheet is read.
+
+       A bar fill set here is handed to `mermaid.initialize` as a
+       `themeVariables` entry, which is the only channel Mermaid offers for
+       them. The three values are shades of the node fill above, so a task bar
+       reads as the same material as a node: done is deepest, a plain bar sits
+       at the node's own shade, and active is the brightest of the three so an
+       in-progress bar still stands out. Legibility of the task names is the
+       bootstrap's job, not this palette's — they are measured against these
+       fills after render. */
+    --mermaid-gantt-task-fill: #1f2637;
+    --mermaid-gantt-done-fill: #121722;
+    --mermaid-gantt-active-fill: #2d3a56;
+
     --mermaid-label-font: 'trebuchet ms', verdana, arial, sans-serif;
     --mermaid-label-weight: 400;
 
