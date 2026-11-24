@@ -6,7 +6,7 @@ import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 import { printStylesheetSource } from '../src/core/print-styles/print-styles.js';
 import { mermaidStylesheetSource } from '../src/core/mermaid-styles/mermaid-styles.js';
 import { pageGeometry } from '../src/core/page-geometry.js';
-import { MERMAID_CDN_URL, NORMALIZE_VARIABLE } from '../src/core/mermaid-bootstrap.js';
+import { MERMAID_CDN_URL, NORMALIZE_VARIABLE, isDarkColor } from '../src/core/mermaid-bootstrap.js';
 import { KATEX_STYLESHEET_URL } from '../src/core/katex-bootstrap.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
 import { bundledThemes, readTheme } from './helpers/themes.js';
@@ -337,9 +337,21 @@ test('oled supplies a palette and leaves the Mermaid selectors to the shared blo
   // was the drift: 69 selectors and 24 !important declarations restating the
   // shared block. Its divergence is now a palette, so assert the palette.
   assert.ok(!oled.match(/^div,\s*$/m), 'oled must not blanket-reset div backgrounds');
-  assert.match(oled, /--mermaid-ink:\s*#f0f2ff;/, 'canvas ink is the near-white');
-  assert.match(oled, /--mermaid-ink-on-shape:\s*#111111;/, 'shape ink is dark, on light fills');
-  assert.match(oled, /--mermaid-line:\s*#f5f7ff;/, 'edges and lifelines are near-white');
-  assert.match(oled, /--mermaid-shape-fill:/, 'the dark theme opts in to a shape fill');
+  assert.match(oled, /--mermaid-theme:\s*dark;/, 'oled selects Mermaid’s own dark theme');
+  assert.match(oled, /--mermaid-ink:\s*#[0-9a-f]{6};/i, 'canvas ink is declared');
+  assert.match(oled, /--mermaid-shape-fill:\s*#[0-9a-f]{6};/i, 'the dark theme opts in to a shape fill');
   assert.ok(!oled.includes('.mermaid svg'), 'no selector list of its own');
+
+  // The two ink variables are a pair: the canvas ink is chosen for a black
+  // sheet and the on-shape ink for the fill beside it. Neither may be dark on
+  // a dark theme — the fill they sit on is — so both are checked with the
+  // luminance rule the browser program already owns rather than with a second
+  // copy of the arithmetic here.
+  const hex = (name) => /^#([0-9a-f]{6})$/i.exec(name)[1];
+  const asRgb = (value) =>
+    `rgb(${Number.parseInt(value.slice(0, 2), 16)}, ${Number.parseInt(value.slice(2, 4), 16)}, ${Number.parseInt(value.slice(4, 6), 16)})`;
+  for (const name of ['--mermaid-ink', '--mermaid-ink-on-shape']) {
+    const value = hex(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(oled)[1]);
+    assert.equal(isDarkColor(asRgb(value)), false, `${name} must stay light: the sheet and the fill are dark`);
+  }
 });

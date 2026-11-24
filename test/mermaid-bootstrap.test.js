@@ -21,7 +21,11 @@ import {
   labelColorFor,
   runMermaidBootstrap,
   mermaidInitOptions,
+  rootVariableValue,
   NORMALIZE_VARIABLE,
+  THEME_VARIABLE,
+  BOOTSTRAP_VARIABLES,
+  DEFAULT_MERMAID_THEME,
   LABEL_LIGHT_COLOR,
   MERMAID_CDN_URL,
 } from '../src/core/mermaid-bootstrap.js';
@@ -136,6 +140,7 @@ function diagramNode(text) {
 function createPage({
   diagrams,
   normalizing = false,
+  mermaidTheme,
   shapeFill = 'rgb(20, 24, 40)',
   runtimeFails = false,
   failingText = null,
@@ -171,8 +176,11 @@ function createPage({
     },
   };
 
+  const rootVariables = { [NORMALIZE_VARIABLE]: normalizing ? '1' : '' };
+  if (mermaidTheme !== undefined) rootVariables[THEME_VARIABLE] = mermaidTheme;
+
   const computed = new Map([
-    [root, styleStub({ variables: { [NORMALIZE_VARIABLE]: normalizing ? '1' : '' } })],
+    [root, styleStub({ variables: rootVariables })],
     [shape, styleStub({ fill: shapeFill })],
   ]);
 
@@ -315,6 +323,104 @@ test('the program refuses to run without the protocol handle', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// The theme selection, read before Mermaid initialises
+// ---------------------------------------------------------------------------
+
+test('the exported theme variable is the one the bootstrap reads', () => {
+  assert.equal(THEME_VARIABLE, '--mermaid-theme');
+  assert.ok(
+    BOOTSTRAP_VARIABLES.includes(NORMALIZE_VARIABLE) && BOOTSTRAP_VARIABLES.includes(THEME_VARIABLE),
+    'both root properties the browser program owns must be declared together',
+  );
+});
+
+test('a theme setting --mermaid-theme: dark makes Mermaid initialise with dark', async () => {
+  const page = createPage({ diagrams: [diagramNode('graph TD; A-->B')], mermaidTheme: 'dark' });
+
+  await run(page);
+
+  assert.equal(page.calls.initialize.theme, 'dark');
+});
+
+test('a theme without --mermaid-theme keeps Mermaid on its base theme', async () => {
+  const page = createPage({ diagrams: [diagramNode('graph TD; A-->B')] });
+
+  await run(page);
+
+  assert.equal(page.calls.initialize.theme, 'base');
+});
+
+test('an empty or whitespace-only --mermaid-theme falls back to base', async () => {
+  for (const value of ['', '   ', '\n\t']) {
+    const page = createPage({ diagrams: [diagramNode('graph TD; A-->B')], mermaidTheme: value });
+
+    await run(page);
+
+    assert.equal(page.calls.initialize.theme, 'base', `${JSON.stringify(value)} must not become a theme`);
+  }
+});
+
+test('the resolved theme is trimmed, so a padded declaration still selects it', async () => {
+  const page = createPage({ diagrams: [diagramNode('graph TD; A-->B')], mermaidTheme: '  dark\n' });
+
+  await run(page);
+
+  assert.equal(page.calls.initialize.theme, 'dark');
+});
+
+test('mermaidInitOptions keeps its other options and returns a fresh object per theme', () => {
+  const base = mermaidInitOptions();
+  const dark = mermaidInitOptions('dark');
+
+  assert.equal(dark.theme, 'dark');
+  assert.equal(base.theme, DEFAULT_MERMAID_THEME);
+  assert.equal(DEFAULT_MERMAID_THEME, 'base');
+  assert.notEqual(base, mermaidInitOptions(), 'a caller must not be able to mutate a shared options object');
+  for (const options of [base, dark]) {
+    assert.equal(options.startOnLoad, false);
+    assert.equal(options.securityLevel, 'loose');
+    assert.deepEqual(options.flowchart, { htmlLabels: false });
+    assert.deepEqual(options.sequence, { useMaxWidth: true, htmlLabels: false });
+    assert.deepEqual(options.gantt, { useMaxWidth: true });
+  }
+});
+
+test('rootVariableValue treats an empty declaration as absent, with a per-read fallback', () => {
+  const root = (value) => ({ getPropertyValue: () => value });
+
+  assert.equal(rootVariableValue(root('dark'), THEME_VARIABLE), 'dark');
+  assert.equal(rootVariableValue(root('  dark\n'), THEME_VARIABLE), 'dark');
+  assert.equal(rootVariableValue(root(''), THEME_VARIABLE, 'base'), 'base');
+  assert.equal(rootVariableValue(root('   '), THEME_VARIABLE, 'base'), 'base');
+  assert.equal(rootVariableValue(root('1'), NORMALIZE_VARIABLE), '1');
+});
+
+test('the theme is read before Mermaid initialises, not after the render loop', async () => {
+  // The order is the whole point of the change: `mermaid.initialize` needs the
+  // resolved theme, and it runs before any diagram is rendered. A read placed
+  // beside the normalisation opt-in would happen one step too late, and the
+  // behavioural tests above would still pass because the fake captures the
+  // options object either way.
+  const source = await readFile(
+    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
+    'utf8',
+  );
+
+  const themeRead = source.indexOf(`rootVariableValue(rootStyle, THEME_VARIABLE`);
+  const initialise = source.indexOf('mermaid.initialize(mermaidInitOptions(theme))');
+  assert.ok(themeRead > -1, 'the theme must be read through the exported constant');
+  assert.ok(initialise > -1, 'the resolved theme must be the one initialisation receives');
+  assert.ok(themeRead < initialise, 'the theme must be resolved before mermaid.initialize()');
+
+  // And the normalisation opt-in keeps reading the root after the render loop.
+  const renderLoop = source.indexOf('for (const [index, node] of nodes.entries())');
+  assert.ok(
+    source.indexOf('rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE)') > renderLoop,
+    'the normalisation opt-in is read after the render loop; that behaviour is unchanged',
+  );
+});
+
+// ---------------------------------------------------------------------------
 // The theme opt-in, across the file seam
 // ---------------------------------------------------------------------------
 
@@ -399,8 +505,16 @@ test('the program reads the opt-in through the variable name it exports', async 
     'utf8',
   );
   assert.ok(source.includes('getComputedStyle'), 'the opt-in is read at render time');
+
+  // The read lives behind `rootVariableValue`, which takes the exported
+  // constant as its argument: the name still has one owner, and the trim and
+  // empty-as-absent rule is stated once for both root properties.
   assert.ok(
-    source.includes('getPropertyValue(NORMALIZE_VARIABLE)'),
+    source.includes('getPropertyValue(name)'),
+    'custom properties are read through the one helper that normalises them',
+  );
+  assert.ok(
+    source.includes('rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE)'),
     'the variable name must come from the exported constant, not a literal',
   );
   assert.ok(source.includes(MERMAID_CDN_URL), 'the runtime URL is a single exported constant');

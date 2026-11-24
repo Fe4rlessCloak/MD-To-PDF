@@ -13,15 +13,24 @@
 :root {
     --mermaid-normalize: 1;
 
+    /* Mermaid's own dark theme, selected from the theme rather than painted by
+       the shared block. Gantt task bars, state clusters, journey cards, pie
+       slices and the rest are coloured by Mermaid itself from its theme
+       variables, so a theme that only repaints nodes leaves those families as
+       pale cream patches on a black page. Naming the theme here is what makes
+       every family dark; the light themes omit the property and keep `base`. */
+    --mermaid-theme: dark;
+
     /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
        The selector list lives there; this theme supplies only these values.
 
        This theme's divergence is entirely in these values, and it is the
        reason two of them are opt-in variables rather than required:
 
-       - --mermaid-shape-fill: Mermaid's default node fill is a pale cream
-         that reads as a glare patch on a black page, so shapes are painted
-         a cold near-white here. Supplying the variable is what activates
+       - --mermaid-shape-fill: Mermaid's dark theme paints its own dark node
+         fill, and this value is the same decision stated once for the shared
+         block: shapes are flat dark navy here, a shade above the black sheet
+         so an outline still reads. Supplying the variable is what activates
          the shared fill rule; the light themes omit it and keep Mermaid's
          own per-diagram-type fills.
 
@@ -29,16 +38,22 @@
          page it needs an opaque plate behind it or the line strikes through
          the text.
 
+       The ink-on-shape value is light because the fill is now dark: the two
+       move together, and a theme that darkened one while keeping the old ink
+       would print near-black labels on a dark shape. Mermaid's native dark
+       theme knows the same pairing for every family the shared block does not
+       touch.
+
        It does NOT define --mermaid-normalize differently or restate any
        selector: this block used to be 69 selectors and 24 !important
        declarations, and all of that was these two variables plus ink split
        by surface. */
-    --mermaid-ink: #f0f2ff;
-    --mermaid-ink-on-shape: #111111;
-    --mermaid-shape-stroke: #c0c4e0;
+    --mermaid-ink: #e6e9f5;
+    --mermaid-ink-on-shape: #eef1fb;
+    --mermaid-shape-stroke: #8f93b8;
     --mermaid-shape-stroke-width: 1px;
-    --mermaid-shape-fill: #f0f2ff;
-    --mermaid-line: #f5f7ff;
+    --mermaid-shape-fill: #1b2130;
+    --mermaid-line: #c8cbe4;
     --mermaid-edge-label-bg: #000000;
     --mermaid-badge-ink: #f0f2ff;
     --mermaid-label-font: 'trebuchet ms', verdana, arial, sans-serif;

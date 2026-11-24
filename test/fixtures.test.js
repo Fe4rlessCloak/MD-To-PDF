@@ -303,3 +303,28 @@ test('the diagram fixture renders every fence it declares', async () => {
     'the diagram fixture carries no block math',
   );
 });
+
+test('the diagram fixture exercises the diagram families the theme selection reaches', async () => {
+  // The theme selection is passed to `mermaid.initialize` once, for every
+  // diagram in the document, so a family that no fixture declares is a family
+  // whose surfaces nobody checks. Gantt is the family that was missing: its
+  // bars and task rows are painted from Mermaid's own theme variables, not
+  // from the shared block's shape rules, so it is the one that shows whether
+  // the native dark theme actually took effect. The state diagram and pie
+  // chart are here for the same reason at "default shapes" scale.
+  const { markdown, bodyHtml } = await convertFixture('test-fixtures.md');
+  const declarations = blockContents(bodyHtml, 'mermaid');
+
+  for (const opener of ['gantt', 'stateDiagram', 'pie', 'flowchart', 'sequenceDiagram']) {
+    assert.ok(
+      declarations.some((source) => source.split('\n')[0].trim().startsWith(opener)),
+      `the fixture must declare a ${opener} diagram, or its surfaces go unchecked`,
+    );
+  }
+
+  assert.equal(
+    declarations.length,
+    countFences(markdown, 'mermaid'),
+    'every declared family must reach the document as its own container',
+  );
+});

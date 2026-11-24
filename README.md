@@ -183,7 +183,8 @@ This allows you to reuse existing typography, spacing, colors, and print rules.
 
 Mermaid rendering is configured by [`mermaidInitOptions()`](src/core/mermaid-bootstrap.js) using:
 
-- `theme: 'base'`
+- `theme: 'base'` by default, or the theme a stylesheet selects through
+  [`THEME_VARIABLE`](src/core/mermaid-bootstrap.js) (`--mermaid-theme`)
 - `startOnLoad: false`
 - print-safe rendering behavior
 
@@ -231,7 +232,7 @@ race and break diagrams late in a large document.
 | Theme | File | Character |
 |---|---|---|
 | Default | [`styles/style.css`](styles/style.css) | Academic light. Serif body, indigo headings. |
-| OLED | [`styles/oled-style.css`](styles/oled-style.css) | True-black surface and neon accents, for dark viewing. |
+| OLED | [`styles/oled-style.css`](styles/oled-style.css) | True-black surface and neon accents, for dark viewing. Selects Mermaid's own `dark` theme. |
 | Warm paper | [`styles/paper-style.css`](styles/paper-style.css) | Sepia reading surface, rust accent, generous leading for long-form study. |
 | High contrast | [`styles/contrast-style.css`](styles/contrast-style.css) | Black on white (21:1) meeting WCAG AAA, hierarchy carried by weight and rules rather than hue. |
 | Compact | [`styles/compact-style.css`](styles/compact-style.css) | Dense revision layout: smaller type, tighter margins, sections run on instead of breaking. |
@@ -251,6 +252,22 @@ program in [`mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — inlined i
 assembly time — then strips the inline text colours after render so the
 theme governs every label evenly. The OLED, warm paper, high contrast, and compact themes opt in;
 the default theme leaves author colours untouched. Author **fill** colours are always preserved.
+
+### Mermaid theme selection
+
+A theme may also select one of Mermaid's built-in themes by defining `--mermaid-theme`, read at
+render time by the same browser program through
+[`THEME_VARIABLE`](src/core/mermaid-bootstrap.js). The OLED theme selects `dark`, which paints
+cohesive dark surfaces for the diagram families the shared block never reaches — Gantt bars and
+section bands, state composites, pie slices, timeline and journey cards — because Mermaid itself
+resolves those from its theme variables rather than from a selector. Every light theme omits the
+property and Mermaid initialises with `base`, the variable-driven theme whose palette those themes
+were designed around.
+
+Both root properties are owned by the browser program and published together as
+`BOOTSTRAP_VARIABLES`, which is what lets the styling contract test tell a program-owned name from
+one the shared block reads. Neither belongs in the required set: a theme that omits them is stating
+a choice, not shipping half a palette.
 
 ### Page geometry
 
@@ -286,7 +303,7 @@ by the test suite as rendering inputs:
   This is the large-mixed-document fixture: math and diagrams in the same document, which
   is the combination that historically broke.
 - [`documents/test-fixtures.md`](documents/test-fixtures.md) — Mermaid edge-case validation
-  (wide, tall, small, and long-label diagrams).
+  (wide, tall, small, long-label, Gantt, state and pie diagrams).
 
 The fixture tests in [`test/fixtures.test.js`](test/fixtures.test.js) read both documents
 and drive them through Markdown rendering and HTML assembly, asserting the resulting

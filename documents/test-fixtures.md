@@ -110,3 +110,58 @@ flowchart TD
 ### Closing Paragraph
 
 If this paragraph appears immediately after the diagram without overlap or clipping, the integration with the print layout flow is behaving correctly.
+
+## 6. Gantt Chart
+
+A Gantt chart is painted entirely from Mermaid's own theme variables — task bars, section bands and axis text are not nodes, so the shared block's shape rules never reach them. It is the diagram family that shows whether a theme's selected Mermaid theme actually took effect: under a light theme the bars are Mermaid's pastel default, and under OLED they must be dark surfaces with legible task labels.
+
+```mermaid
+gantt
+    title Print Pipeline Schedule
+    dateFormat YYYY-MM-DD
+    axisFormat %b %d
+    section Authoring
+    Draft fixture document      :done, draft, 2026-01-05, 4d
+    Review Mermaid edge cases   :done, review, after draft, 3d
+    section Rendering
+    Assemble HTML shell         :active, assemble, after review, 5d
+    Render diagrams in Chromium :render, after assemble, 3d
+    section Delivery
+    Export PDF                  :export, after render, 2d
+    Manual render check         :check, after export, 2d
+```
+
+A paragraph after the Gantt chart: the chart must occupy its own vertical band, with the axis labels at the bottom and no bar or gridline crossing into this text.
+
+## 7. State Diagram
+
+A state diagram exercises "default shapes" for the theme selection: rounded state nodes, a filled start marker and a cluster-like grouping, all painted by Mermaid rather than by an author `style` directive.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Reading : input received
+    Reading --> Rendering : markdown parsed
+    Rendering --> Rendering : diagram queued
+    Rendering --> Done : all diagrams rendered
+    Done --> [*]
+    state Rendering {
+        [*] --> Loading
+        Loading --> Painting : runtime ready
+        Painting --> [*]
+    }
+```
+
+## 8. Pie Chart
+
+A pie chart is the other "default shapes" case, and the one where Mermaid's own slice palette is most visible: a theme that selects a dark Mermaid theme gets dark-appropriate slice colours and legend ink without any selector of its own.
+
+```mermaid
+pie showData
+    title Where render time goes
+    "Markdown parsing" : 10
+    "Mermaid rendering" : 55
+    "KaTeX typesetting" : 20
+    "PDF export" : 15
+```
+
