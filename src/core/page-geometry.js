@@ -37,7 +37,7 @@
  * number — so the footer is emitted, not deleted as a WeasyPrint leftover.
  */
 
-import { stripComments } from './mermaid-styles/mermaid-styles.js';
+import { declarations } from './css-declarations.js';
 
 /**
  * Name under which the `@page` rule is emitted as its own stylesheet layer.
@@ -299,27 +299,6 @@ export const PAGE_GEOMETRY_INVARIANTS = Object.freeze([
 ]);
 
 /**
- * Variables a stylesheet declares, and the subset it declares with no value.
- *
- * `--x: ;` resolves to the empty string in `var()`, so the declaration is
- * dropped and the reader falls back — a theme that looks like it says
- * something says nothing. An empty custom property is treated as missing, as
- * `emptyDeclarations()` in the Mermaid styling module already does.
- *
- * @param {string} css  A theme's CSS text, with comments already removed.
- * @returns {{declared: Set<string>, empty: Set<string>}}
- */
-function geometryDeclarations(css) {
-  const declared = new Set();
-  const empty = new Set();
-
-  for (const match of css.matchAll(/(--page-[\w-]+)\s*:/g)) declared.add(match[1]);
-  for (const match of css.matchAll(/(--page-[\w-]+)\s*:\s*(?:;|$)/gm)) empty.add(match[1]);
-
-  return { declared, empty };
-}
-
-/**
  * Registered invariants a theme violates.
  *
  * Returned rather than thrown, for the same reason `missingVariables()` is: a
@@ -327,15 +306,16 @@ function geometryDeclarations(css) {
  * Order follows {@link PAGE_GEOMETRY_INVARIANTS}, so findings read in the same
  * order as the contract they violate.
  *
- * Comment text is stripped first. The themes mention variables in prose to
- * explain what the module owns, and a check that could not tell a comment from
- * a declaration would forbid the explanation.
+ * Declarations are read by `declarations()` in `css-declarations.js`, which
+ * strips comments first. The themes mention variables in prose to explain what
+ * the module owns, and a check that could not tell a comment from a
+ * declaration would forbid the explanation.
  *
  * @param {string} css  A theme's CSS text.
  * @returns {Array<PageGeometryFinding>} One finding per violated invariant.
  */
 export function violatedInvariants(css) {
-  const { declared, empty } = geometryDeclarations(stripComments(css));
+  const { declared, empty } = declarations(css, '--page-');
   const findings = [];
 
   for (const invariant of PAGE_GEOMETRY_INVARIANTS) {

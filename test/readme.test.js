@@ -7,49 +7,54 @@
  * so the fix has to be structural rather than another round of hand-correction.
  *
  * This test enforces the method: cite a path and a symbol, never a line number.
- * It also checks that every relative link in the README resolves, and that the
- * file overview names every module that exists. It cannot tell whether the prose
- * is *true* — nothing can — but it keeps the mechanical half from rotting.
+ * It also checks that every relative link and heading fragment in the README
+ * resolves, and that the file overview names every module that exists. It
+ * cannot tell whether the prose is *true* — nothing can — but it keeps the
+ * mechanical half from rotting.
+ *
+ * The checks live in `helpers/documentation.js` because the agent instructions
+ * need exactly the same ones, and two copies of a guard drift apart.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+
+import {
+  brokenTargets,
+  lineAnchors,
+  localTargets,
+} from './helpers/documentation.js';
 
 const repoRoot = new URL('../', import.meta.url);
 const readme = () => readFile(new URL('README.md', repoRoot), 'utf8');
+const read = (url) => readFile(url, 'utf8');
 
 test('the README cites symbols, never line numbers', async () => {
-  const text = await readme();
-
   // `path.js:42` inside a link, and a bare `path.js:42` in prose, are both
   // anchors. A line number is wrong the moment anything above it is edited, so
   // the project cites the file and the symbol instead.
-  const anchoredLinks = [...text.matchAll(/\]\(([^)\s]+):\d+\)/g)].map((m) => m[1]);
-  assert.deepEqual(anchoredLinks, [], `these references still carry line anchors: ${anchoredLinks.join(', ')}`);
+  const { linked, prose } = lineAnchors(await readme());
 
-  const anchoredProse = [...text.matchAll(/[\w./-]+\.(?:js|css|md|json):\d+\b/g)].map((m) => m[0]);
-  assert.deepEqual(anchoredProse, [], `these prose references still carry line anchors: ${anchoredProse.join(', ')}`);
+  assert.deepEqual(linked, [], `these references still carry line anchors: ${linked.join(', ')}`);
+  assert.deepEqual(prose, [], `these prose references still carry line anchors: ${prose.join(', ')}`);
 });
 
-test('every relative link in the README resolves to a real file', async () => {
-  const text = await readme();
-
-  const targets = [...text.matchAll(/\]\((?!https?:|#)([^)\s]+)\)/g)]
-    .map((m) => m[1].split('#')[0])
-    .filter(Boolean);
-
+test('every relative link and heading fragment in the README resolves', async () => {
+  // A `README.md#testing` link survives a path-only check after that heading is
+  // renamed. The file still exists, the section does not, and the reader lands
+  // at the top of the document wondering what happened.
+  const targets = localTargets(await readme());
   assert.ok(targets.length > 0, 'the README must link into the repo');
 
-  const missing = [];
-  for (const target of new Set(targets)) {
-    try {
-      await stat(new URL(target, repoRoot));
-    } catch {
-      missing.push(target);
-    }
-  }
-  assert.deepEqual(missing, [], `the README links to files that do not exist: ${missing.join(', ')}`);
+  const { missingFiles, missingFragments } = await brokenTargets(targets, repoRoot, read);
+
+  assert.deepEqual(missingFiles, [], `the README links to files that do not exist: ${missingFiles.join(', ')}`);
+  assert.deepEqual(
+    missingFragments,
+    [],
+    `these links name headings that do not exist: ${missingFragments.join(', ')}`,
+  );
 });
 
 test('the file overview names every module that exists', async () => {
@@ -66,6 +71,7 @@ test('the file overview names every module that exists', async () => {
     'src/core/readiness-protocol.js',
     'src/core/mermaid-bootstrap.js',
     'src/core/katex-bootstrap.js',
+    'src/core/css-declarations.js',
     'src/core/page-geometry.js',
     'src/core/build-html.js',
     'src/core/render-pdf.js',

@@ -150,17 +150,17 @@ test('the workflow pins a Node version that satisfies the engines floor', async 
     major !== null,
     'the workflow must pin a numeric Node version, so the engines floor can be checked against it',
   );
-  assert.ok(
-    major >= 18,
-    `CI runs Node ${major}, below the engines floor of >=18; raise node-version in the workflow`,
-  );
 
+  // The floor belongs to package.json, not to this test. Reading it here rather
+  // than spelling the number again means raising the floor cannot leave a stale
+  // literal behind that agrees with the workflow and disagrees with the package.
   const pkg = JSON.parse(await readFile(new URL('package.json', repoRoot), 'utf8'));
   const floor = /(\d+)/.exec(pkg.engines?.node ?? '');
   assert.ok(floor, 'package.json must declare an engines.node floor for this check to mean anything');
+  const floorMajor = Number.parseInt(floor[1], 10);
 
   assert.ok(
-    major >= Number.parseInt(floor[1], 10),
+    major >= floorMajor,
     `CI runs Node ${major} but package.json promises ${pkg.engines.node}; CI must exercise a supported runtime`,
   );
 });
