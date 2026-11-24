@@ -133,7 +133,7 @@ function bootstrapScript({ entry, source }) {
 ${READINESS_SOURCE}
 ${program}
 
-await ${entry}({ flags: RF, fatalReportIndex: ${FATAL_REPORT_INDEX} });
+await ${entry}({ flags: RF, publish: publishFlag, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 </script>
 `;
 }

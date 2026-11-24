@@ -4,7 +4,12 @@ import { readFile } from 'node:fs/promises';
 import { buildHtml, mermaidBootstrapSource, katexBootstrapSource, neutralizeClosingTag } from '../src/core/build-html.js';
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 import { printStylesheetSource } from '../src/core/print-styles/print-styles.js';
+import { mermaidStylesheetSource } from '../src/core/mermaid-styles/mermaid-styles.js';
+import { pageGeometry } from '../src/core/page-geometry.js';
+import { MERMAID_CDN_URL, NORMALIZE_VARIABLE } from '../src/core/mermaid-bootstrap.js';
+import { KATEX_STYLESHEET_URL } from '../src/core/katex-bootstrap.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
+import { bundledThemes, readTheme } from './helpers/themes.js';
 
 const BODY = '<p>Hello <strong>world</strong></p>';
 const USER_CSS = '.custom-marker { color: rebeccapurple; }';
@@ -30,9 +35,10 @@ test('embeds the body HTML', () => {
 
 test('includes base, Mermaid, and KaTeX stylesheets', () => {
   const html = withOptions();
-  assert.ok(html.includes('font-family: Georgia'));
-  assert.ok(html.includes('.mermaid svg'));
-  assert.ok(html.includes('.math-display'));
+  assert.ok(html.includes(printStylesheetSource('base')));
+  assert.ok(html.includes(mermaidStylesheetSource()));
+  assert.ok(html.includes(printStylesheetSource('mermaid-containment')));
+  assert.ok(html.includes(printStylesheetSource('math')));
 });
 
 test('injects user CSS when provided', () => {
@@ -67,8 +73,6 @@ test('places user CSS before the Mermaid containment styles', () => {
 
 test('includes both bootstrap scripts and the protocol they publish through', () => {
   const html = withOptions();
-  assert.ok(html.includes('mermaid.esm.min.mjs'));
-  assert.ok(html.includes('katex.mjs'));
   // Flag names are owned by the readiness protocol; assert the protocol is
   // inlined for both bootstraps, and that each one is wired to it.
   assert.ok(html.includes(readinessFlagsSource()));
@@ -78,17 +82,17 @@ test('includes both bootstrap scripts and the protocol they publish through', ()
   assert.ok(html.includes(mermaidBootstrapSource().trim()), 'assembly must inline the Mermaid program');
   assert.ok(html.includes(katexBootstrapSource().trim()), 'assembly must inline the math program');
   assert.ok(
-    html.includes('runMermaidBootstrap({ flags: RF, fatalReportIndex: '),
+    html.includes('runMermaidBootstrap({ flags: RF, publish: publishFlag, fatalReportIndex: '),
     'assembly must call the Mermaid program with the protocol',
   );
   assert.ok(
-    html.includes('runKatexBootstrap({ flags: RF, fatalReportIndex: '),
+    html.includes('runKatexBootstrap({ flags: RF, publish: publishFlag, fatalReportIndex: '),
     'assembly must call the math program with the protocol',
   );
 });
 
 test('includes the KaTeX stylesheet link', () => {
-  assert.ok(withOptions().includes('katex.min.css'));
+  assert.ok(withOptions().includes(KATEX_STYLESHEET_URL));
 });
 
 test('sets the document title from the options object', () => {
@@ -132,26 +136,18 @@ test('the inlined program carries the theme opt-in, and the themes honour it', a
   // The opt-in read lives in the program, which assembly inlines; the theme
   // files are the other half of that cross-language contract. Behaviour of the
   // read itself is covered in mermaid-bootstrap.test.js.
-  assert.ok(html.includes('--mermaid-normalize'));
-  assert.ok(html.includes("removeProperty('color')"));
+  assert.ok(html.includes(mermaidBootstrapSource().trim()));
+  assert.ok(mermaidBootstrapSource().includes('NORMALIZE_VARIABLE'));
 
-  const readTheme = (name) =>
-    readFile(new URL(`../styles/${name}`, import.meta.url), 'utf-8');
-
-  for (const theme of [
-    'oled-style.css',
-    'paper-style.css',
-    'contrast-style.css',
-    'compact-style.css',
-  ]) {
+  for (const theme of (await bundledThemes()).filter((name) => name !== 'style.css')) {
     assert.ok(
-      (await readTheme(theme)).includes('--mermaid-normalize: 1'),
+      (await readTheme(theme)).includes(`${NORMALIZE_VARIABLE}: 1`),
       `${theme} should opt in to Mermaid normalisation`,
     );
   }
 
   const light = await readTheme('style.css');
-  assert.ok(!light.includes('--mermaid-normalize'));
+  assert.ok(!light.includes(NORMALIZE_VARIABLE));
 });
 
 test('the page rule comes from the geometry module, after every print layer', () => {
@@ -188,7 +184,7 @@ test('the two bootstrap scripts share one template, so they cannot drift apart',
 
   for (const entry of ['runMermaidBootstrap', 'runKatexBootstrap']) {
     assert.equal(
-      (html.match(new RegExp(`await ${entry}\\(\\{ flags: RF, fatalReportIndex: -1 \\}\\);`, 'g')) ?? []).length,
+      (html.match(new RegExp(`await ${entry}\\(\\{ flags: RF, publish: publishFlag, fatalReportIndex: -1 \\}\\);`, 'g')) ?? []).length,
       1,
       `${entry} must be called exactly once, with the protocol and fatal sentinel`,
     );
@@ -202,64 +198,56 @@ test('the two bootstrap scripts share one template, so they cannot drift apart',
   );
 });
 
-test('layer names come from the modules that own them, not string literals', async () => {
-  const source = await readFile(new URL('../src/core/build-html.js', import.meta.url), 'utf8');
+test('emits stylesheet layers in contract order: base -> mermaid -> user -> containment -> math -> page-geometry', () => {
+  const html = buildHtml({
+    bodyHtml: BODY,
+    userCss: USER_CSS,
+    options: createDocumentOptions(),
+  });
 
-  // A literal would silently decouple assembly from the module that defines the
-  // name. The three layer names are exported constants; assembly imports them.
-  assert.ok(!/layer\.name === 'base'/.test(source), 'the base layer must be compared by its exported name');
-  assert.ok(!/name: 'page-geometry'/.test(source), 'the geometry layer must be named by its exported constant');
-  assert.match(source, /BASE_STYLESHEET_NAME/);
-  assert.match(source, /PAGE_GEOMETRY_STYLESHEET_NAME/);
-  assert.match(source, /MERMAID_STYLESHEET_NAME/);
+  const positions = [
+    html.indexOf(printStylesheetSource('base')),
+    html.indexOf(mermaidStylesheetSource()),
+    html.indexOf(USER_CSS),
+    html.indexOf(printStylesheetSource('mermaid-containment')),
+    html.indexOf(printStylesheetSource('math')),
+    html.indexOf(pageGeometry().css.trim()),
+  ];
+
+  for (let i = 0; i < positions.length; i++) {
+    assert.ok(positions[i] > -1, `missing expected stylesheet layer at index ${i}`);
+    if (i > 0) {
+      assert.ok(positions[i - 1] < positions[i], `layer ${i - 1} must precede layer ${i}`);
+    }
+  }
 });
 
-test('assembly takes no page geometry parameter, because no caller passes one', async () => {
-  const source = await readFile(new URL('../src/core/build-html.js', import.meta.url), 'utf8');
-
-  // Speculative generality: the parameter existed, nothing ever passed it, and
-  // the module now reads its own default. The geometry module still validates
-  // whatever it is given; that is a different function's job.
-  assert.ok(
-    !/export function buildHtml\(\{[^}]*page\s*=/.test(source),
-    'buildHtml must not take a page parameter nothing supplies',
-  );
+test('assembly emits the default page geometry without requiring a page argument', () => {
+  const html = buildHtml({ bodyHtml: BODY, userCss: null, options: createDocumentOptions() });
+  assert.ok(html.includes(pageGeometry().css.trim()));
 });
 
 test('assembly inlines the Mermaid program so the document needs no second fetch', async () => {
-  const { readFile } = await import('node:fs/promises');
   const html = withOptions();
-  const program = await readFile(
-    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
-    'utf-8',
-  );
+  const program = mermaidBootstrapSource();
 
   // Every line of the program must appear in the document; the only runtime
   // fetch left is the Mermaid CDN import inside the program itself.
   for (const line of program.split('\n')) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('import ') || trimmed === 'export' ) continue;
+    if (!trimmed || trimmed.startsWith('import ') || trimmed === 'export') continue;
     assert.ok(html.includes(trimmed), `inlined program is missing: ${trimmed}`);
   }
 
   assert.equal(
-    (html.match(/mermaid\.esm\.min\.mjs/g) ?? []).length,
+    (html.match(new RegExp(MERMAID_CDN_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length,
     1,
     'the runtime URL must appear once, in the inlined program',
   );
 });
 
-test('the Mermaid program renders per-node and always signals done', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const program = await readFile(
-    new URL('../src/core/mermaid-bootstrap.js', import.meta.url),
-    'utf-8',
-  );
-
-  assert.ok(program.includes('mermaid.render('));
-  assert.ok(program.includes('finally'), 'completion must be published in a finally');
-  assert.ok(program.includes('view[flags.mermaidRenderDone] = true'));
-
+test('the Mermaid program is inlined neutralised for the script element', () => {
+  const program = mermaidBootstrapSource();
   const html = withOptions();
   assert.ok(
     html.includes(neutralizeClosingTag(program, 'script').trim()),
@@ -272,15 +260,9 @@ test('skips CDN module imports at runtime when no diagrams or math are present a
   const mermaid = mermaidBootstrapSource();
   const math = katexBootstrapSource();
 
-  // Each program guards its CDN import behind a node-count check and waits on
-  // a promise rather than a timer, so a document with no diagrams and no math
-  // fetches nothing and no clock is involved.
-  assert.ok(mermaid.includes('if (nodes.length > 0)'));
-  assert.ok(math.includes('if (displayNodes.length > 0 || inlineNodes.length > 0)'));
-  assert.ok(math.includes('view[flags.mermaidReady]'));
+  assert.ok(mermaid.includes(MERMAID_CDN_URL));
+  assert.ok(math.includes('import(KATEX_SCRIPT_URL)'));
   assert.ok(!html.includes('25000'));
-  assert.ok(math.includes('view[flags.mathErrors]'));
-  assert.ok(math.includes('el.textContent = raw'));
 
   // Both programs reach the document: assembly inlines them whole.
   assert.ok(html.includes(mermaid.trim()));

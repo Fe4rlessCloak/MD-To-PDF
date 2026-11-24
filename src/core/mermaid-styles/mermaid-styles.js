@@ -7,10 +7,10 @@
  * than double the selectors and `!important` declarations. The list now lives
  * here once.
  *
- * Two seams:
+ * Two parts of the interface:
  *
- * - {@link mermaidStylesheetSource} reads the block from disk. This is the read
- *   adapter; HTML assembly inlines it, and tests assert against the real file.
+ * - {@link mermaidStylesheetSource} reads the block from disk; HTML assembly
+ *   inlines it, and tests assert against the real file.
  * - {@link MERMAID_VARIABLES} is the interface a theme must satisfy: the names
  *   the block reads, each with the purpose it serves. {@link missingVariables}
  *   and {@link redeclaredSelectors} turn that interface into the checks that
@@ -123,6 +123,13 @@ export const MERMAID_VARIABLES = Object.freeze([
       + 'readable on a dark canvas.',
     required: false,
   },
+  {
+    name: '--mermaid-badge-ink',
+    purpose:
+      'Opt-in ink for the sequence-diagram autonumber badge (.sequenceNumber), '
+      + 'for themes that need explicit numeral contrast against the badge disc.',
+    required: false,
+  },
 ]);
 
 /**
@@ -150,7 +157,7 @@ export function optionalVariableNames() {
  * @param {string} css
  * @returns {string}
  */
-function stripComments(css) {
+export function stripComments(css) {
   return css.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
@@ -193,11 +200,10 @@ export function selectorList(css) {
  * half-styled theme this check exists to catch. A custom property set to the
  * empty string is a missing one.
  *
- * @param {string} css
+ * @param {string} withoutComments  Comment-stripped CSS text.
  * @returns {Set<string>} Names declared with no value.
  */
-function emptyDeclarations(css) {
-  const withoutComments = stripComments(css);
+function emptyDeclarations(withoutComments) {
   const empty = new Set();
   const pattern = /(--mermaid-[\w-]+)\s*:\s*(?:;|$)/gm;
   let match;
@@ -226,7 +232,7 @@ export function missingVariables(css) {
   while ((match = pattern.exec(withoutComments)) !== null) {
     declared.add(match[1]);
   }
-  const empty = emptyDeclarations(css);
+  const empty = emptyDeclarations(withoutComments);
 
   return requiredVariableNames().filter((name) => !declared.has(name) || empty.has(name));
 }

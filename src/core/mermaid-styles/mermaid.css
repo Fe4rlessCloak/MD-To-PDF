@@ -51,10 +51,11 @@
 /*
  * Type and canvas ink for text drawn straight onto the page surface.
  *
- * The autonumber badge (`.sequenceNumber`) gets the theme's ink but not its
- * typeface: Mermaid draws it at a fixed 12px inside a fixed-size marker, and
- * the badge's metrics belong to that marker rather than to the document's
- * typography. Swapping the face moves the numeral without improving it.
+ * The autonumber badge (`.sequenceNumber`) keeps Mermaid's own typeface
+ * (not `--mermaid-label-font`): Mermaid draws it at a fixed 12px inside a
+ * fixed-size marker, and swapping the face moves the numeral without improving
+ * it. Its ink is excluded from `--mermaid-ink` below and governed separately
+ * by `@container style(--mermaid-badge-ink)`.
  */
 .mermaid svg text,
 .mermaid svg tspan,
@@ -236,8 +237,10 @@
   .mermaid svg .messageLine0,
   .mermaid svg .messageLine1,
   .mermaid svg .actor-line,
+  .mermaid svg .labelLine,
   .mermaid svg .loopLine,
   .mermaid svg line,
+  .mermaid svg polyline,
   .mermaid svg path,
   .mermaid svg polygon {
     stroke: var(--mermaid-line) !important;
@@ -249,6 +252,17 @@
     fill: var(--mermaid-line) !important;
     stroke: var(--mermaid-line) !important;
   }
+}
+
+/* --- HTML labels -------------------------------------------------------- */
+
+/*
+ * `htmlLabels: false` keeps text in real SVG text nodes, but Mermaid still
+ * emits `foreignObject` wrappers in some diagram families. They must stay
+ * transparent, or the wrapper paints a white plate behind light ink.
+ */
+.mermaid svg foreignObject {
+  background: transparent !important;
 }
 
 /* --- Edge-label plates (opt-in) ----------------------------------------- */
@@ -266,15 +280,8 @@
     background: var(--mermaid-edge-label-bg) !important;
     stroke: none !important;
   }
-}
 
-/* --- HTML labels -------------------------------------------------------- */
-
-/*
- * `htmlLabels: false` keeps text in real SVG text nodes, but Mermaid still
- * emits `foreignObject` wrappers in some diagram families. They must stay
- * transparent, or the wrapper paints a white plate behind light ink.
- */
-.mermaid svg foreignObject {
-  background: transparent !important;
+  .mermaid svg .edgeLabel foreignObject {
+    background: var(--mermaid-edge-label-bg) !important;
+  }
 }

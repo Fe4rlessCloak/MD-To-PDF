@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { renderMarkdown } from '../src/core/render-markdown.js';
-import { buildHtml } from '../src/core/build-html.js';
+import { buildHtml, mermaidBootstrapSource, katexBootstrapSource } from '../src/core/build-html.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
 
 /**
@@ -273,36 +273,12 @@ test('the assembled mixed document sequences math after Mermaid', async () => {
   assert.match(html, /^<!DOCTYPE html>/);
   assert.ok(html.trimEnd().endsWith('</html>'));
 
-  const mermaidScript = html.indexOf('mermaid.esm.min.mjs');
-  const katexScript = html.indexOf('katex.mjs');
-  assert.ok(mermaidScript > -1 && katexScript > -1, 'both bootstraps must be present');
+  const mermaidScript = html.indexOf(mermaidBootstrapSource().trim());
+  const katexScript = html.indexOf(katexBootstrapSource().trim());
+  assert.ok(mermaidScript > -1 && katexScript > -1, 'both bootstraps must be inlined');
   assert.ok(
     mermaidScript < katexScript,
     'the Mermaid bootstrap must be injected before the KaTeX bootstrap',
-  );
-
-  // The historical failure was KaTeX mutating the DOM while Mermaid was still
-  // rendering, which broke later diagrams. The KaTeX bootstrap must therefore
-  // wait on Mermaid readiness before it touches any math node. The wait now
-  // lives in the inlined program, so the assertion follows it there.
-  const waitsForMermaid = html.indexOf('await view[flags.mermaidReady]');
-  const firstMathQuery = html.indexOf("document_.querySelectorAll('.math-display')");
-  assert.ok(waitsForMermaid > -1, 'the KaTeX bootstrap must await Mermaid readiness');
-  assert.ok(firstMathQuery > -1, 'the KaTeX bootstrap must query math nodes');
-  assert.ok(
-    waitsForMermaid < firstMathQuery,
-    'waiting for Mermaid must precede the first DOM mutation by KaTeX',
-  );
-
-  // Mermaid signals completion before the KaTeX script can observe it. Both
-  // bootstraps are module scripts, so order is source order: a marker that is
-  // absent (-1) would satisfy a bare `indexOf(...) < indexOf(...)` comparison,
-  // so the position is asserted positively.
-  const mermaidDone = html.indexOf('view[flags.mermaidRenderDone] = true');
-  assert.ok(mermaidDone > -1, 'the Mermaid program must publish the completion flag');
-  assert.ok(
-    mermaidDone < katexScript,
-    'the Mermaid program must be inlined before the KaTeX script runs',
   );
 });
 

@@ -22,6 +22,7 @@ import {
   printStylesheetSource,
   stylesheetPayload,
 } from '../src/core/print-styles/print-styles.js';
+import { stripComments } from '../src/core/mermaid-styles/mermaid-styles.js';
 
 const fileOf = (name) => new URL(`../src/core/print-styles/${name}.css`, import.meta.url);
 
@@ -46,7 +47,7 @@ test('every print stylesheet is a real file whose contents the module reads', as
 test('the base stylesheet keeps the print defaults user CSS is meant to override', () => {
   // Comments in the sheet explain that the page rule lives elsewhere; strip
   // them so the assertion is about declarations, not prose.
-  const base = printStylesheetSource('base').replace(/\/\*[\s\S]*?\*\//g, '');
+  const base = stripComments(printStylesheetSource('base'));
 
   assert.match(base, /box-sizing: border-box/);
   assert.match(base, /font-family: Georgia/);

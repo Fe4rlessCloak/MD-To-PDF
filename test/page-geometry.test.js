@@ -13,27 +13,15 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import {
   DEFAULT_PAGE_GEOMETRY,
   PAGE_GEOMETRY_VARIABLES,
   pageGeometry,
 } from '../src/core/page-geometry.js';
-
-/**
- * Every bundled theme, discovered from `styles/` rather than listed.
- *
- * A literal list would leave a sixth stylesheet unguarded, and the guarantees
- * below — no page rule of its own, geometry supplied as variables — are
- * exactly what a new theme must inherit. The directory is the source of truth.
- *
- * @returns {Promise<string[]>} Theme file names, sorted for stable messages.
- */
-async function bundledThemes() {
-  const entries = await readdir(new URL('../styles/', import.meta.url));
-  return entries.filter((name) => name.endsWith('.css')).sort();
-}
+import { stripComments } from '../src/core/mermaid-styles/mermaid-styles.js';
+import { bundledThemes, readTheme as readBundledTheme } from './helpers/themes.js';
 
 /**
  * Read one bundled theme, with CSS comments removed.
@@ -45,9 +33,8 @@ async function bundledThemes() {
  * @param {string} name  File name under `styles/`.
  * @returns {Promise<string>}
  */
-async function readTheme(name) {
-  const css = await readFile(new URL(`../styles/${name}`, import.meta.url), 'utf8');
-  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+function readTheme(name) {
+  return readBundledTheme(name, { stripComments: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +256,7 @@ test('the page rule is declared in exactly one place across the whole repo', asy
   const declaring = [];
   for (const relative of sources) {
     const css = await readFile(new URL(relative, import.meta.url), 'utf8');
-    if (/@page\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, ''))) {
+    if (/@page\b/.test(stripComments(css))) {
       declaring.push(relative);
     }
   }

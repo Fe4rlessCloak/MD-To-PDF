@@ -295,9 +295,23 @@ test('no other file in the package repeats the CDN version', async () => {
   // manifest (which declared the unused npm dependency) and HTML assembly
   // (which wrote the version into both the stylesheet link and the import).
   const { readdirSync } = await import('node:fs');
-  const { join } = await import('node:path');
+  const { join, relative } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const root = fileURLToPath(new URL('../', import.meta.url));
+  const coreDir = join(root, 'src/core');
+
+  function collectJsFiles(dir) {
+    const files = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...collectJsFiles(fullPath));
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        files.push(fullPath);
+      }
+    }
+    return files;
+  }
 
   const offenders = [];
   for (const [file, text] of [
@@ -308,11 +322,11 @@ test('no other file in the package repeats the CDN version', async () => {
     if (text.includes(KATEX_VERSION)) offenders.push(file);
   }
 
-  for (const entry of readdirSync(join(root, 'src/core'), { recursive: true })) {
-    const name = String(entry);
-    if (!name.endsWith('.js') || name === 'katex-bootstrap.js') continue;
-    const text = await readFile(join(root, 'src/core', name), 'utf8');
-    if (text.includes(KATEX_VERSION)) offenders.push(`src/core/${name}`);
+  for (const fullPath of collectJsFiles(coreDir)) {
+    const relPath = relative(coreDir, fullPath);
+    if (relPath === 'katex-bootstrap.js') continue;
+    const text = await readFile(fullPath, 'utf8');
+    if (text.includes(KATEX_VERSION)) offenders.push(`src/core/${relPath}`);
   }
 
   assert.deepEqual(offenders, [], 'the CDN version must have exactly one owner');

@@ -6,12 +6,12 @@
  * Both halves must agree on the same spellings. Defining the names here — once
  * — means a rename breaks a test rather than silently timing out every PDF.
  *
- * It owns the names, the waiting step and the classification of an error
- * report into a fatal outcome versus warnings. Both steps take their
- * collaborator by injection — a page evaluator for waiting, a report array for
- * classification — so the renderer can be a thin adapter over a real page and
- * tests can be a scripted fake. Publishing is the injected program's business
- * (see `build-html.js`).
+ * It owns the names, the publish helper used by the injected programs, the
+ * waiting step, and the classification of an error report into a fatal outcome
+ * versus warnings. Both waiting and classification take their collaborator by
+ * injection — a page evaluator for waiting, a report array for classification
+ * — so the renderer can be a thin adapter over a real page and tests can be a
+ * scripted fake.
  */
 
 import { RenderError } from './errors.js';
@@ -123,7 +123,7 @@ export async function waitForReadiness(evaluate, flagName, options = {}) {
  *
  * The shape both browser programs push onto an error-report array, and what
  * the classification and description steps below consume. Declared once
- * because it crosses the language boundary: the programs are browser code, the
+ * because it crosses the language seam: the programs are browser code, the
  * readers are Node, and a field renamed on one side must be renamed on both.
  *
  * @typedef {Object} ReadinessReport
@@ -181,11 +181,15 @@ export function describeReport(entry, fallbackKind = 'report') {
  * @param {string} options.runtime     Runtime name for the fatal message, e.g. `Mermaid`.
  * @param {string} options.noun        What one warning concerns, e.g. `math expression`.
  * @param {string} [options.reportKind='report']  Noun for a warning line with no `kind`.
+ * @param {string} [options.prefix='Warning']     Leading label for the warning header line.
  * @param {(line: string) => void} options.sink
  * @returns {void}
  * @throws {RenderError} When a report carries {@link FATAL_REPORT_INDEX}.
  */
-export function checkErrorReports(reports, { runtime, noun, reportKind = 'report', sink }) {
+export function checkErrorReports(
+  reports,
+  { runtime, noun, reportKind = 'report', prefix = 'Warning', sink },
+) {
   const { fatal, warnings } = classifyErrorReports(reports);
 
   if (fatal) {
@@ -193,9 +197,29 @@ export function checkErrorReports(reports, { runtime, noun, reportKind = 'report
   }
 
   if (warnings.length > 0) {
-    sink(`[renderPdf()] Warning: ${warnings.length} ${noun}(s) failed to render:`);
+    sink(`${prefix}: ${warnings.length} ${noun}(s) failed to render:`);
     for (const entry of warnings) sink(`  - ${describeReport(entry, reportKind)}`);
   }
+}
+
+/**
+ * Publish a readiness flag value on a target object through the protocol.
+ *
+ * Rejects unknown flag keys loudly instead of writing `undefined` properties.
+ *
+ * @template T
+ * @param {Object} target
+ * @param {string} key     Key in `flags`.
+ * @param {T} value
+ * @param {{[key: string]: string}} [flags=READINESS_FLAGS]
+ * @returns {T}
+ */
+export function publishFlag(target, key, value, flags = READINESS_FLAGS) {
+  if (!Object.hasOwn(flags, key)) {
+    throw new Error(`Unknown readiness flag "${String(key)}".`);
+  }
+  target[flags[key]] = value;
+  return value;
 }
 
 /**
@@ -203,16 +227,25 @@ export function checkErrorReports(reports, { runtime, noun, reportKind = 'report
  * browser program.
  *
  * The injected scripts are module scripts, so each one declares its own
- * `RF` binding from this source rather than reaching across a shared global.
- * Callers inline the returned text into a `<script>` element; it must
- * therefore never contain a closing script sequence.
+ * `RF` and `publishFlag` bindings from this source rather than reaching across
+ * a shared global. Callers inline the returned text into a `<script>` element;
+ * it must therefore never contain a closing script sequence.
  *
- * @returns {string} JavaScript declaring `const RF` bound to the flag names.
+ * @returns {string} JavaScript declaring `const RF` and `publishFlag`.
  */
 export function readinessFlagsSource() {
   const entries = Object.entries(READINESS_FLAGS)
     .map(([key, name]) => `  ${key}: ${JSON.stringify(name)},`)
     .join('\n');
 
-  return `const RF = Object.freeze({\n${entries}\n});`;
+  return [
+    `const RF = Object.freeze({\n${entries}\n});`,
+    `function publishFlag(target, key, value) {`,
+    `  if (!Object.hasOwn(RF, key)) {`,
+    `    throw new Error(\`Unknown readiness flag "\${String(key)}".\`);`,
+    `  }`,
+    `  target[RF[key]] = value;`,
+    `  return value;`,
+    `}`,
+  ].join('\n');
 }

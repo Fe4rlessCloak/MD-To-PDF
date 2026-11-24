@@ -95,6 +95,11 @@ export function parseArgs(argv) {
   }
 
   const [input, output] = positional;
+  if (!input || !output) {
+    throw new InputError(
+      `Both input and output file paths are required.\n  ${USAGE}`
+    );
+  }
   values.input = input;
   values.output = output;
 

@@ -162,9 +162,23 @@ test('warnings are reported through the injected sink and do not throw', () => {
   );
 
   assert.deepEqual(sink.lines, [
-    '[renderPdf()] Warning: 2 math expression(s) failed to render:',
+    'Warning: 2 math expression(s) failed to render:',
     '  - expression 1: bad diagram',
     '  - inline 4: bad math',
+  ]);
+});
+
+test('checkErrorReports applies a caller-supplied prefix when provided', () => {
+  const sink = sinkOf();
+
+  checkErrorReports(
+    [{ index: 0, error: 'syntax error' }],
+    { runtime: 'Mermaid', noun: 'Mermaid diagram', reportKind: 'diagram', prefix: '[renderPdf()] Warning', sink },
+  );
+
+  assert.deepEqual(sink.lines, [
+    '[renderPdf()] Warning: 1 Mermaid diagram(s) failed to render:',
+    '  - diagram 0: syntax error',
   ]);
 });
 
@@ -185,29 +199,6 @@ test('checking reports returns nothing, because its caller used neither half', (
     checkErrorReports([{ index: 0, error: 'x' }], { runtime: 'Mermaid', noun: 'Mermaid', sink: sinkOf() }),
     undefined,
   );
-});
-
-test('the renderer is one adapter over the protocol seam, and says so', async () => {
-  // Glossary: an adapter is a concrete thing satisfying an interface at a seam;
-  // the seam is the location, not the closure. The file prose used to call both
-  // the module and a `readFlag` closure "the seam".
-  const source = await readFile(new URL('../src/core/render-pdf.js', import.meta.url), 'utf8');
-
-  assert.ok(
-    /one adapter over the readiness protocol's seam/.test(source),
-    'the module must describe itself as an adapter, not the seam',
-  );
-  assert.ok(
-    !/is the browser adapter for the readiness protocol/i.test(source),
-    'the module is not the whole browser adapter for the protocol',
-  );
-  assert.ok(
-    !/The readiness seam:/.test(source),
-    'a closure is an adapter over the seam, not the seam itself',
-  );
-  // The report reader is not a second name for the flag reader.
-  assert.ok(!source.includes('readReports'), 'a report array is read through the same accessor');
-  assert.match(source, /readFlagValue/);
 });
 
 test('the renderer owns neither a polling loop nor a fatal-index comparison', async () => {

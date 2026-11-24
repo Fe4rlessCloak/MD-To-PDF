@@ -25,9 +25,8 @@ import {
   LABEL_LIGHT_COLOR,
   MERMAID_CDN_URL,
 } from '../src/core/mermaid-bootstrap.js';
-import { READINESS_FLAGS, FATAL_REPORT_INDEX } from '../src/core/readiness-protocol.js';
-
-const stylesDir = (name) => readFile(new URL(`../styles/${name}`, import.meta.url), 'utf-8');
+import { READINESS_FLAGS, FATAL_REPORT_INDEX, publishFlag } from '../src/core/readiness-protocol.js';
+import { bundledThemes, readTheme } from './helpers/themes.js';
 
 // ---------------------------------------------------------------------------
 // The luminance rule
@@ -316,7 +315,7 @@ test('the program refuses to run without the protocol handle', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// The theme opt-in, across the file boundary
+// The theme opt-in, across the file seam
 // ---------------------------------------------------------------------------
 
 test('a theme that defines the opt-in variable gets its label colours normalised', async () => {
@@ -359,23 +358,39 @@ test('a light author fill is not overridden even when the theme opts in', async 
 });
 
 test('four of the five bundled themes opt in to label normalisation', async () => {
-  for (const theme of [
-    'oled-style.css',
-    'paper-style.css',
-    'contrast-style.css',
-    'compact-style.css',
-  ]) {
+  const optInThemes = (await bundledThemes()).filter((name) => name !== 'style.css');
+  assert.ok(optInThemes.length >= 4, 'bundled opt-in themes must be discovered from styles/');
+
+  for (const theme of optInThemes) {
     assert.ok(
-      (await stylesDir(theme)).includes(`${NORMALIZE_VARIABLE}: 1`),
+      (await readTheme(theme)).includes(`${NORMALIZE_VARIABLE}: 1`),
       `${theme} should opt in to Mermaid normalisation`,
     );
   }
 
-  const light = await stylesDir('style.css');
+  const light = await readTheme('style.css');
   assert.ok(
     !light.includes(NORMALIZE_VARIABLE),
     'the light default must stay opted out',
   );
+});
+
+test('the program can publish readiness through the protocol publishFlag adapter', async () => {
+  const diagrams = [diagramNode('graph TD; A-->B')];
+  const page = createPage({ diagrams });
+
+  await runMermaidBootstrap({
+    flags: READINESS_FLAGS,
+    publish: publishFlag,
+    fatalReportIndex: FATAL_REPORT_INDEX,
+    win: page.win,
+    doc: page.doc,
+    loadRuntime: page.loadRuntime,
+  });
+
+  assert.equal(page.win[READINESS_FLAGS.mermaidRenderDone], true);
+  assert.deepEqual(page.win[READINESS_FLAGS.mermaidErrors], []);
+  await page.win[READINESS_FLAGS.mermaidReady];
 });
 
 test('the program reads the opt-in through the variable name it exports', async () => {

@@ -172,6 +172,11 @@ test('treats a bare --term separator as the end of options', () => {
   });
 });
 
+test('throws InputError when input or output path is empty', () => {
+  assert.throws(() => parseArgs(['', 'out.pdf']), InputError);
+  assert.throws(() => parseArgs(['in.md', '']), InputError);
+});
+
 test('ignores extra trailing positional arguments', () => {
   assert.deepEqual(parseArgs(['in.md', 'out.pdf', 'extra', 'more']), {
     input: 'in.md',

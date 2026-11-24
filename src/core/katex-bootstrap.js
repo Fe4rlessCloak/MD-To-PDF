@@ -145,6 +145,8 @@ export async function loadKatexFromCdn() {
  *
  * @param {Object} params
  * @param {{[key: string]: string}} params.flags  The readiness protocol's flag names.
+ * @param {(target: Object, key: string, value: unknown) => unknown} [params.publish]
+ *   Readiness protocol publisher; defaults to validated assignment against `flags`.
  * @param {number} params.fatalReportIndex  Index marking a runtime-load failure.
  * @param {Object} [params.win=globalThis]   Global object the flags are published on.
  * @param {Document} [params.doc]            Document to render into; defaults to `win.document`.
@@ -156,6 +158,7 @@ export async function loadKatexFromCdn() {
  */
 export async function runKatexBootstrap({
   flags,
+  publish,
   fatalReportIndex,
   win,
   doc,
@@ -170,8 +173,17 @@ export async function runKatexBootstrap({
 
   const view = win ?? globalThis;
   const document_ = doc ?? view.document;
+  const setFlag =
+    publish ??
+    ((target, key, value) => {
+      if (!Object.hasOwn(flags, key)) {
+        throw new Error(`Unknown readiness flag "${String(key)}".`);
+      }
+      target[flags[key]] = value;
+      return value;
+    });
 
-  view[flags.mathErrors] = [];
+  const errors = setFlag(view, 'mathErrors', []);
 
   try {
     // Wait deterministically for Mermaid to finish before mutating the DOM.
@@ -190,23 +202,23 @@ export async function runKatexBootstrap({
       let index = 0;
       for (const el of displayNodes) {
         const report = renderExpression(katex, el, { displayMode: true, index });
-        if (report) view[flags.mathErrors].push(report);
+        if (report) errors.push(report);
         index++;
       }
       for (const el of inlineNodes) {
         const report = renderExpression(katex, el, { displayMode: false, index });
-        if (report) view[flags.mathErrors].push(report);
+        if (report) errors.push(report);
         index++;
       }
     }
   } catch (err) {
-    view[flags.mathErrors].push({
+    errors.push({
       index: fatalReportIndex,
       kind: BOOTSTRAP_REPORT_KIND,
       error: messageOf(err),
     });
   } finally {
     // Signal that math rendering is complete, even on failure.
-    view[flags.mathRenderDone] = true;
+    setFlag(view, 'mathRenderDone', true);
   }
 }

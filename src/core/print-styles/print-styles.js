@@ -8,10 +8,10 @@
  * page to come out printable — so they live here, next to the bootstraps they
  * belong with, and not in `styles/`.
  *
- * Two seams:
+ * Two parts of the interface:
  *
- * - {@link printStylesheetSource} reads one stylesheet from disk. This is the
- *   read adapter; tests use it to assert against the real file.
+ * - {@link printStylesheetSource} reads one stylesheet from disk; tests use it
+ *   to assert against the real file.
  * - {@link stylesheetPayload} returns the layers this module owns, in their
  *   order relative to each other. That order is an acceptance criterion of its
  *   own, so it is a value a test can inspect instead of the accidental order of
@@ -113,7 +113,7 @@ export function stylesheetPayload({ userCss } = {}) {
     layers.push({ name, css: printStylesheetSource(name) });
 
     // User CSS goes between the defaults and the rules that must outrank it.
-    if (name === 'base' && userCss) {
+    if (name === BASE_STYLESHEET_NAME && userCss) {
       layers.push({ name: USER_STYLESHEET_NAME, css: String(userCss).trim() });
     }
   }

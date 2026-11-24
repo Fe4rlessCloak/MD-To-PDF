@@ -221,6 +221,8 @@ export async function loadMermaidFromCdn() {
  *
  * @param {Object} params
  * @param {{[key: string]: string}} params.flags  The readiness protocol's flag names.
+ * @param {(target: Object, key: string, value: unknown) => unknown} [params.publish]
+ *   Readiness protocol publisher; defaults to validated assignment against `flags`.
  * @param {number} params.fatalReportIndex  Index marking a runtime-load failure.
  * @param {Object} [params.win=globalThis]   Global object the flags are published on.
  * @param {Document} [params.doc]            Document to render into; defaults to `win.document`.
@@ -232,6 +234,7 @@ export async function loadMermaidFromCdn() {
  */
 export async function runMermaidBootstrap({
   flags,
+  publish,
   fatalReportIndex,
   win,
   doc,
@@ -247,13 +250,26 @@ export async function runMermaidBootstrap({
   const view = win ?? globalThis;
   const document_ = doc ?? view.document;
   const computedStyle = (el) => view.getComputedStyle(el);
+  const setFlag =
+    publish ??
+    ((target, key, value) => {
+      if (!Object.hasOwn(flags, key)) {
+        throw new Error(`Unknown readiness flag "${String(key)}".`);
+      }
+      target[flags[key]] = value;
+      return value;
+    });
 
   let resolveReady;
-  view[flags.mermaidReady] = new Promise((resolve) => {
-    resolveReady = resolve;
-  });
-  view[flags.mermaidErrors] = [];
-  view[flags.mermaidDebug] = [];
+  setFlag(
+    view,
+    'mermaidReady',
+    new Promise((resolve) => {
+      resolveReady = resolve;
+    }),
+  );
+  const errors = setFlag(view, 'mermaidErrors', []);
+  setFlag(view, 'mermaidDebug', []);
 
   try {
     const nodes = document_.querySelectorAll('.mermaid');
@@ -269,7 +285,7 @@ export async function runMermaidBootstrap({
           node.innerHTML = svg;
         } catch (err) {
           const message = messageOf(err);
-          view[flags.mermaidErrors].push({ index, error: message });
+          errors.push({ index, error: message });
           document_.getElementById('dmermaid-' + index)?.remove();
           node.textContent = 'Mermaid diagram failed to render: ' + message;
         }
@@ -283,13 +299,13 @@ export async function runMermaidBootstrap({
         normalizeLabelColors(document_, computedStyle);
       }
 
-      view[flags.mermaidDebug] = collectDebugReports(document_);
+      setFlag(view, 'mermaidDebug', collectDebugReports(document_));
     }
   } catch (err) {
-    view[flags.mermaidErrors].push({ index: fatalReportIndex, error: messageOf(err) });
+    errors.push({ index: fatalReportIndex, error: messageOf(err) });
   } finally {
     // Signal completion so KaTeX and Puppeteer can proceed, even on failure.
-    view[flags.mermaidRenderDone] = true;
+    setFlag(view, 'mermaidRenderDone', true);
     resolveReady();
   }
 }

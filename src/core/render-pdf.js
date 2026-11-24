@@ -93,6 +93,7 @@ export async function renderPdf(html, options = {}) {
       runtime: 'Mermaid',
       noun: 'Mermaid diagram',
       reportKind: 'diagram',
+      prefix: '[renderPdf()] Warning',
       sink: toStderr,
     });
 
@@ -103,6 +104,7 @@ export async function renderPdf(html, options = {}) {
       runtime: 'KaTeX',
       noun: 'math expression',
       reportKind: 'expression',
+      prefix: '[renderPdf()] Warning',
       sink: toStderr,
     });
 

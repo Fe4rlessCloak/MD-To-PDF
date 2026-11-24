@@ -16,7 +16,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 import {
   MERMAID_VARIABLES,
@@ -28,25 +28,10 @@ import {
   selectorList,
   canonicalSelector,
   redeclaredSelectors,
+  stripComments,
 } from '../src/core/mermaid-styles/mermaid-styles.js';
-
-/**
- * Every bundled theme, discovered from `styles/` rather than listed.
- *
- * A literal list would let a sixth stylesheet drop into the directory
- * unguarded — exactly the half-styled theme these tests exist to prevent. The
- * directory is the source of truth, so a new file is covered the moment it
- * lands.
- *
- * @returns {Promise<string[]>} Theme file names, sorted for stable messages.
- */
-async function bundledThemes() {
-  const entries = await readdir(new URL('../styles/', import.meta.url));
-  return entries.filter((name) => name.endsWith('.css')).sort();
-}
-
-/** Read a theme's CSS text. @param {string} name */
-const readTheme = (name) => readFile(new URL(`../styles/${name}`, import.meta.url), 'utf-8');
+import { NORMALIZE_VARIABLE } from '../src/core/mermaid-bootstrap.js';
+import { bundledThemes, readTheme } from './helpers/themes.js';
 
 /** The block's own text. */
 const block = () => mermaidStylesheetSource();
@@ -232,13 +217,48 @@ test('the OLED divergence is declared as optional variables, not extra selectors
   // A theme that repaints Mermaid opts in through a style query, so its rules
   // are part of the shared block and inert for every other theme. This is the
   // whole mechanism: divergence costs a variable, never a selector copy.
-  for (const name of ['--mermaid-shape-fill', '--mermaid-edge-label-bg', '--mermaid-shape-stroke', '--mermaid-line']) {
+  for (const name of [
+    '--mermaid-shape-fill',
+    '--mermaid-edge-label-bg',
+    '--mermaid-shape-stroke',
+    '--mermaid-line',
+    '--mermaid-badge-ink',
+  ]) {
     const escaped = name.replace(/-/g, '\\-');
     assert.match(
       source,
       new RegExp(`@container\\s+style\\(${escaped}\\)`),
       `${name} must gate a shared rule rather than be copied into a theme`,
     );
+  }
+});
+
+test('every --mermaid-* variable read by the block or declared by a theme is in MERMAID_VARIABLES', async () => {
+  const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
+  const blockCss = stripComments(block());
+
+  for (const match of blockCss.matchAll(/(--mermaid-[\w-]+)/g)) {
+    assert.ok(known.has(match[1]), `mermaid.css references ${match[1]}, which is missing from MERMAID_VARIABLES`);
+  }
+
+  for (const theme of await bundledThemes()) {
+    const themeCss = await readTheme(theme, { stripComments: true });
+    for (const match of themeCss.matchAll(/(--mermaid-[\w-]+)\s*:/g)) {
+      if (match[1] === NORMALIZE_VARIABLE) continue;
+      assert.ok(known.has(match[1]), `${theme} declares ${match[1]}, which is missing from MERMAID_VARIABLES`);
+    }
+  }
+});
+
+test('the shared block preserves polyline, .labelLine, and .edgeLabel foreignObject selectors', () => {
+  const selectors = new Set(selectorList(block()).map(canonicalSelector));
+
+  for (const expected of [
+    '.mermaid svg polyline',
+    '.mermaid svg .labelLine',
+    '.mermaid svg .edgeLabel foreignObject',
+  ]) {
+    assert.ok(selectors.has(expected), `mermaid.css must retain ${expected} for theme visual parity`);
   }
 });
 
