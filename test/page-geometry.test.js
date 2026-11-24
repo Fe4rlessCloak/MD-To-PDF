@@ -9,6 +9,14 @@
  *
  * Everything here is asserted as text: the module returns CSS text and a plain
  * options object, so no browser is needed to know what the page will look like.
+ *
+ * Themes are the other half of the contract, and they are untyped CSS that can
+ * arrive wrong: a theme can omit its margin, or paint a dark sheet and leave a
+ * page number tuned for white paper. Two guards close that: the theme variable
+ * names the page rule reads must stay in step with what the themes set, and
+ * {@link PAGE_GEOMETRY_INVARIANTS} states the cross-variable rules every theme
+ * must satisfy. The invariant sweep discovers themes from `styles/`, so a sixth
+ * theme is checked the moment its file exists — no list to update.
  */
 
 import { test } from 'node:test';

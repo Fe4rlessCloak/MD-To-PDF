@@ -19,6 +19,14 @@
  *   A theme sets `--page-margin` and stops there; it never writes `@page`, so
  *   it cannot redeclare the rule inconsistently.
  *
+ * Because theme values arrive as untyped CSS, a theme can also arrive *wrong*:
+ * it can omit the margin, or paint a dark sheet and leave the page number the
+ * grey chosen for white paper. {@link PAGE_GEOMETRY_INVARIANTS} is the
+ * declarative list of the cross-variable rules that would otherwise be
+ * unstated, and {@link violatedInvariants} reports a theme that breaks one —
+ * by name, all at once, without throwing. The rules are data so that a sixth
+ * one is one entry here rather than a new branch in every test.
+ *
  * The emitted rule reads each variable with the geometry default as its
  * fallback, which is what lets an unthemed document stay printable while a
  * theme still wins.
