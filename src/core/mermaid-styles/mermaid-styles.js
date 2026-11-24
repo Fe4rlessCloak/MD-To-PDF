@@ -34,6 +34,8 @@
 
 import { readFileSync } from 'node:fs';
 
+import { declarations, stripComments } from '../css-declarations.js';
+
 /** Name of the stylesheet, as `print-styles` names its layers. @type {string} */
 export const MERMAID_STYLESHEET_NAME = 'mermaid';
 
@@ -150,16 +152,13 @@ export function optionalVariableNames() {
 /**
  * Remove CSS comments.
  *
- * Used by every check below that must read declarations rather than prose: the
- * block's own header mentions selectors, and a theme's comment explaining what
- * it no longer does must not read as a declaration.
- *
- * @param {string} css
- * @returns {string}
+ * Re-exported from `css-declarations.js`, where the reader that needs it lives,
+ * so the many callers that already import it from here keep working and there
+ * is one implementation rather than two. The block's own header mentions
+ * selectors, and a theme's comment explaining what it no longer does must not
+ * read as a declaration.
  */
-export function stripComments(css) {
-  return css.replace(/\/\*[\s\S]*?\*\//g, '');
-}
+export { stripComments };
 
 /**
  * Selectors a stylesheet declares, with any `@container`/`@media` wrapper
@@ -193,27 +192,6 @@ export function selectorList(css) {
 }
 
 /**
- * Variables a stylesheet declares but leaves empty.
- *
- * `--x: ;` is not a palette entry: the block's `var()` would resolve to the
- * empty string and the declaration would be dropped, which is exactly the
- * half-styled theme this check exists to catch. A custom property set to the
- * empty string is a missing one.
- *
- * @param {string} withoutComments  Comment-stripped CSS text.
- * @returns {Set<string>} Names declared with no value.
- */
-function emptyDeclarations(withoutComments) {
-  const empty = new Set();
-  const pattern = /(--mermaid-[\w-]+)\s*:\s*(?:;|$)/gm;
-  let match;
-  while ((match = pattern.exec(withoutComments)) !== null) {
-    empty.add(match[1]);
-  }
-  return empty;
-}
-
-/**
  * Required variables a theme fails to define.
  *
  * Returned rather than thrown so a caller can report every missing name at
@@ -221,18 +199,16 @@ function emptyDeclarations(withoutComments) {
  * {@link MERMAID_VARIABLES}, so failures read in the same order as the
  * contract they violate.
  *
+ * `--x: ;` is not a palette entry: the block's `var()` would resolve to the
+ * empty string and the declaration would be dropped, which is exactly the
+ * half-styled theme this check exists to catch. `declarations()` reports a
+ * hollow property as empty, and an empty one counts as missing here.
+ *
  * @param {string} css  A theme's CSS text.
  * @returns {Array<string>} Missing variable names, in contract order.
  */
 export function missingVariables(css) {
-  const withoutComments = stripComments(css);
-  const declared = new Set();
-  const pattern = /(--mermaid-[\w-]+)\s*:/g;
-  let match;
-  while ((match = pattern.exec(withoutComments)) !== null) {
-    declared.add(match[1]);
-  }
-  const empty = emptyDeclarations(withoutComments);
+  const { declared, empty } = declarations(css, '--mermaid-');
 
   return requiredVariableNames().filter((name) => !declared.has(name) || empty.has(name));
 }

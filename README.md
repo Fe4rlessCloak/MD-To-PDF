@@ -264,6 +264,14 @@ The named cover page is opt-in: pass a `cover` margin in the geometry and the mo
 `@page cover` alongside the page rule. No bundled theme styles a cover element, because no
 bundled document produces one.
 
+Every bundled theme must also satisfy a small set of cross-variable rules, declared as data in
+`PAGE_GEOMETRY_INVARIANTS` and checked by `violatedInvariants()`: every theme must declare
+`--page-margin`, and a theme that sets `--page-background` must also set `--page-footer-color`, so
+a dark or tinted sheet never ships with the footer ink chosen for white paper. The typographic
+footer overrides stay optional, so `DEFAULT_PAGE_GEOMETRY` remains the only owner of the defaults.
+Adding a rule is one entry in that list; the test suite applies it to every stylesheet in `styles/`
+as soon as it exists.
+
 ### Known limitation
 
 Mermaid v11 draws node shapes as `<path>` elements, so the themes outline nodes rather than
@@ -346,7 +354,8 @@ Core pipeline, in call order:
 - [`src/core/readiness-protocol.js`](src/core/readiness-protocol.js) — the readiness flag names, the waiting step, and the error-report classification; one source of truth for both the injected browser programs and the renderer
 - [`src/core/mermaid-bootstrap.js`](src/core/mermaid-bootstrap.js) — the Mermaid browser program: the render loop, the label-normalisation luminance rule, and render diagnostics; inlined into the document at assembly time
 - [`src/core/katex-bootstrap.js`](src/core/katex-bootstrap.js) — the KaTeX browser program and the only place its CDN version is written; inlined into the document at assembly time
-- [`src/core/page-geometry.js`](src/core/page-geometry.js) — page geometry: the `@page` rule, the optional named cover page, the theme variable names, and the browser's print preference
+- [`src/core/css-declarations.js`](src/core/css-declarations.js) — reads custom-property declarations out of CSS text: which names a stylesheet declares, which it leaves hollow, and what it declares once comments are removed; shared by page geometry and Mermaid styling
+- [`src/core/page-geometry.js`](src/core/page-geometry.js) — page geometry: the `@page` rule, the optional named cover page, the theme variable names, the theme invariants those variables must satisfy, and the browser's print preference
 - [`src/core/build-html.js`](src/core/build-html.js) — HTML assembly: emitting the stylesheet layers in order, inlining both browser programs, and inlining the protocol
 - [`src/core/render-pdf.js`](src/core/render-pdf.js) — Puppeteer launch, readiness polling, error classification, and PDF export
 - [`src/core/write-output.js`](src/core/write-output.js) — writes the PDF, reporting filesystem failures as input errors
