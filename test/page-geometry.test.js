@@ -9,6 +9,14 @@
  *
  * Everything here is asserted as text: the module returns CSS text and a plain
  * options object, so no browser is needed to know what the page will look like.
+ *
+ * Themes are the other half of the contract, and they are untyped CSS that can
+ * arrive wrong: a theme can omit its margin, or paint a dark sheet and leave a
+ * page number tuned for white paper. Two guards close that: the theme variable
+ * names the page rule reads must stay in step with what the themes set, and
+ * {@link PAGE_GEOMETRY_INVARIANTS} states the cross-variable rules every theme
+ * must satisfy. The invariant sweep discovers themes from `styles/`, so a sixth
+ * theme is checked the moment its file exists — no list to update.
  */
 
 import { test } from 'node:test';
@@ -17,8 +25,10 @@ import { readFile } from 'node:fs/promises';
 
 import {
   DEFAULT_PAGE_GEOMETRY,
+  PAGE_GEOMETRY_INVARIANTS,
   PAGE_GEOMETRY_VARIABLES,
   pageGeometry,
+  violatedInvariants,
 } from '../src/core/page-geometry.js';
 import { stripComments } from '../src/core/mermaid-styles/mermaid-styles.js';
 import { bundledThemes, readTheme as readBundledTheme } from './helpers/themes.js';
@@ -195,8 +205,240 @@ test('no bundled theme styles a content wrapper nothing can emit', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// The invariant contract — one declarative entry per cross-variable rule
+// ---------------------------------------------------------------------------
+
+test('a synthetic theme that declares every required variable violates nothing', () => {
+  const valid = ':root { --page-margin: 2cm 2.2cm; --page-background: #ffffff; '
+    + '--page-footer-color: #333333; }';
+
+  assert.deepEqual(
+    violatedInvariants(valid),
+    [],
+    'a theme declaring the required geometry must pass every registered invariant',
+  );
+});
+
+test('a theme that omits --page-margin is reported by the invariant it violates', () => {
+  const withoutMargin = ':root { --page-background: #ffffff; --page-footer-color: #333333; }';
+
+  const violated = violatedInvariants(withoutMargin);
+
+  assert.deepEqual(
+    violated.map((finding) => finding.invariant),
+    ['page-margin'],
+    'the missing margin must be reported by name, not silently accepted',
+  );
+  assert.match(
+    violated[0].message,
+    /--page-margin/,
+    'the finding must name the variable a theme author has to add',
+  );
+});
+
+test('a theme that paints a sheet background without footer ink is reported as a contrast fault', () => {
+  const unreadableFooter = ':root { --page-margin: 2cm; --page-background: #101010; }';
+
+  const violated = violatedInvariants(unreadableFooter);
+
+  assert.deepEqual(
+    violated.map((finding) => finding.invariant),
+    ['footer-contrast'],
+    'a painted sheet without matching footer ink is the fault the rule exists for',
+  );
+  assert.deepEqual(
+    violated[0].missing,
+    ['--page-footer-color'],
+    'the finding must name the ink the theme has to declare',
+  );
+});
+
+test('the contrast rule does not apply to a theme that leaves the sheet unpainted', () => {
+  // The rule is conditional by design: a theme that inherits the transparent
+  // default never needs its own footer ink, and demanding one would duplicate
+  // DEFAULT_PAGE_GEOMETRY into every theme.
+  const unpainted = ':root { --page-margin: 2cm; }';
+
+  assert.deepEqual(
+    violatedInvariants(unpainted),
+    [],
+    'an unpainted theme must not be forced to declare footer ink',
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Discovery: the directory is the source of truth
 // ---------------------------------------------------------------------------
+
+test('a required variable declared with no value counts as missing, as it does for Mermaid palette variables', () => {
+  // `--page-margin: ;` resolves to the empty string in var(), so the browser
+  // drops the declaration and falls back — a theme that looks like it sets a
+  // margin sets nothing.
+  const hollow = ':root { --page-margin: ; --page-background: #ffffff; '
+    + '--page-footer-color: #333333; }';
+
+  const violated = violatedInvariants(hollow);
+
+  assert.deepEqual(
+    violated.map((finding) => finding.invariant),
+    ['page-margin'],
+    'an empty declaration is a missing one',
+  );
+  assert.deepEqual(violated[0].missing, ['--page-margin']);
+});
+
+test('a conditional requirement declared with no value still violates the contrast invariant', () => {
+  const hollowInk = ':root { --page-margin: 2cm; --page-background: #000000; '
+    + '--page-footer-color: ; }';
+
+  assert.deepEqual(
+    violatedInvariants(hollowInk).map((finding) => finding.invariant),
+    ['footer-contrast'],
+    'a hollow footer ink is not contrast; the sheet still has no readable page number',
+  );
+});
+
+test('a hollow --page-background paints nothing, so the contrast rule does not activate', () => {
+  // `--page-background: ;` resolves to the empty string, the declaration is
+  // dropped, and the sheet falls back to the transparent default. The rule is
+  // about a painted sheet, so a hollow declaration must not demand footer ink.
+  const hollowSheet = ':root { --page-margin: 2cm; --page-background: ; }';
+
+  assert.deepEqual(
+    violatedInvariants(hollowSheet),
+    [],
+    'a sheet that is not painted does not need its own page-number ink',
+  );
+});
+
+test('a variable named only in a comment is not a declaration', () => {
+  // The theme headers explain what the module owns and mention variables by
+  // name. A check that could not tell prose from a declaration would forbid the
+  // explanation, which is why the evaluator strips comments first.
+  const proseOnly = [
+    '/* --page-margin: 2cm 2.2cm; --page-background: #000; --page-footer-color: #fff; */',
+    ':root { --page-margin: 2cm; }',
+  ].join('\n');
+
+  assert.deepEqual(
+    violatedInvariants(proseOnly),
+    [],
+    'a commented-out declaration must not satisfy or create an invariant',
+  );
+
+  const commentHidesFault = [
+    '/* a painted sheet would need --page-footer-color here */',
+    ':root { --page-margin: 2cm; --page-background: #101010; }',
+  ].join('\n');
+
+  assert.deepEqual(
+    violatedInvariants(commentHidesFault).map((finding) => finding.invariant),
+    ['footer-contrast'],
+    'a comment mentioning the missing ink must not excuse it',
+  );
+});
+
+test('every registered invariant names what it requires and why', () => {
+  assert.ok(PAGE_GEOMETRY_INVARIANTS.length >= 2, 'both the margin and contrast rules must be registered');
+
+  const names = new Set();
+  for (const invariant of PAGE_GEOMETRY_INVARIANTS) {
+    assert.match(invariant.name, /^[a-z][\w-]*$/, `${invariant.name} must be a lowercase rule name`);
+    assert.ok(!names.has(invariant.name), `${invariant.name} is registered twice`);
+    names.add(invariant.name);
+
+    assert.ok(invariant.purpose.length > 20, `${invariant.name} must say why it exists`);
+    assert.ok(Array.isArray(invariant.requires) && invariant.requires.length > 0,
+      `${invariant.name} must name the variables it requires`);
+    for (const required of invariant.requires) {
+      assert.ok(
+        Object.values(PAGE_GEOMETRY_VARIABLES).includes(required),
+        `${invariant.name} requires ${required}, which is not a page-geometry variable`,
+      );
+    }
+    assert.ok(invariant.when === null || typeof invariant.when === 'string',
+      `${invariant.name} must declare when it applies, as null or a variable name`);
+  }
+});
+
+test('the contract is frozen, so a test cannot register an invariant by mutating it', () => {
+  assert.ok(Object.isFrozen(PAGE_GEOMETRY_INVARIANTS), 'the invariant list must be frozen');
+  for (const invariant of PAGE_GEOMETRY_INVARIANTS) {
+    assert.ok(Object.isFrozen(invariant), `${invariant.name} must be frozen`);
+    assert.ok(Object.isFrozen(invariant.requires), `${invariant.name} requires list must be frozen`);
+  }
+  assert.throws(
+    () => { PAGE_GEOMETRY_INVARIANTS.push({ name: 'x' }); },
+    TypeError,
+    'pushing a rule must fail loudly rather than silently changing the contract',
+  );
+});
+
+test('the list of rules that exist is exactly the list that is enforced', () => {
+  // One place: a rule added to the contract is enforced by the sweep with no
+  // test edit. Assert the evaluator walks the same array the module exports.
+  const names = PAGE_GEOMETRY_INVARIANTS.map((invariant) => invariant.name);
+
+  assert.deepEqual(
+    names,
+    ['page-margin', 'footer-contrast'],
+    'the registered rules are the margin rule and the conditional contrast rule',
+  );
+
+  // A theme violating both at once reports both, not just the first.
+  const doublyBroken = ':root { --page-background: #101010; }';
+  assert.deepEqual(
+    violatedInvariants(doublyBroken).map((finding) => finding.invariant),
+    ['page-margin', 'footer-contrast'],
+    'every violation is reported, so a theme author fixes them in one pass',
+  );
+});
+
+
+test('every bundled theme satisfies every registered geometry invariant', async () => {
+  // Discovered, never listed: a sixth theme opts itself in by existing, which
+  // is the property the ticket is really about.
+  for (const name of await bundledThemes()) {
+    const violated = violatedInvariants(await readTheme(name));
+
+    assert.deepEqual(
+      violated.map((finding) => finding.message),
+      [],
+      `${name} violates the page-geometry contract:\n${violated.map((finding) => finding.message).join('\n')}`,
+    );
+    assert.deepEqual(
+      violated,
+      [],
+      `${name} must satisfy every invariant registered in PAGE_GEOMETRY_INVARIANTS`,
+    );
+  }
+});
+
+test('a theme may omit the optional footer typography and stay valid', () => {
+  // DEFAULT_PAGE_GEOMETRY owns the default typography. A theme that inherits
+  // it must not have to copy the values in, which is the bloat this contract
+  // is shaped to avoid.
+  const inheriting = ':root { --page-margin: 2cm 2.2cm; --page-background: #ffffff; '
+    + '--page-footer-color: #444444; }';
+
+  assert.deepEqual(
+    violatedInvariants(inheriting),
+    [],
+    'omitting --page-footer-font-size, --page-footer-font-weight and '
+    + '--page-footer-content must not be a violation',
+  );
+
+  for (const optional of [
+    PAGE_GEOMETRY_VARIABLES.footerFontSize,
+    PAGE_GEOMETRY_VARIABLES.footerFontWeight,
+    PAGE_GEOMETRY_VARIABLES.footerContent,
+  ]) {
+    assert.ok(
+      !PAGE_GEOMETRY_INVARIANTS.some((invariant) => invariant.requires.includes(optional)),
+      `${optional} must stay optional; DEFAULT_PAGE_GEOMETRY owns that default`,
+    );
+  }
+});
 
 test('the theme list is discovered from the directory, so a new theme is covered', async () => {
   const themes = await bundledThemes();
@@ -223,6 +465,42 @@ test('compact keeps the small, soft footer its old page rule carried', async () 
   assert.match(compact, /--page-footer-font-size:\s*8pt;/, 'compact footer is 8pt, not the 9pt default');
   assert.match(compact, /--page-footer-color:\s*#4a4a4a;/, 'compact footer ink is #4a4a4a');
   assert.match(compact, /--page-background:\s*#ffffff;/, 'compact prints on a white sheet');
+});
+
+test('contrast keeps the heavier, black footer its old page rule carried', async () => {
+  // Regression: contrast's page number is 10pt/600/#000000 to meet its
+  // maximum-contrast brief. These are deliberate overrides of the 9pt/400/
+  // #888888 defaults, and they are the only reason this theme needs any footer
+  // typography at all — the rest still inherits DEFAULT_PAGE_GEOMETRY.
+  const contrast = await readTheme('contrast-style.css');
+
+  assert.match(contrast, /--page-footer-font-size:\s*10pt;/, 'contrast footer is 10pt, not the 9pt default');
+  assert.match(contrast, /--page-footer-font-weight:\s*600;/, 'contrast footer is 600, not the 400 default');
+  assert.match(contrast, /--page-footer-color:\s*#000000;/, 'contrast footer ink is black');
+  assert.match(contrast, /--page-background:\s*#ffffff;/, 'contrast paints its own white sheet');
+});
+
+test('compact and contrast, the themes with deliberate footer typography, both keep it', async () => {
+  // One assertion for the pair the ticket names, so a future edit that
+  // "tidies" footer overrides out of either theme fails by name.
+  const overrides = {
+    'compact-style.css': { size: '8pt', color: '#4a4a4a' },
+    'contrast-style.css': { size: '10pt', weight: '600', color: '#000000' },
+  };
+
+  for (const [name, expected] of Object.entries(overrides)) {
+    const css = await readTheme(name);
+    for (const [field, value] of Object.entries(expected)) {
+      const property = field === 'size'
+        ? '--page-footer-font-size'
+        : field === 'weight' ? '--page-footer-font-weight' : '--page-footer-color';
+      assert.match(
+        css,
+        new RegExp(`${property}:\\s*${value};`),
+        `${name} must keep ${property}: ${value}; it is a deliberate override, not a default`,
+      );
+    }
+  }
 });
 
 test('every footer variable a theme sets is one the page rule reads', async () => {

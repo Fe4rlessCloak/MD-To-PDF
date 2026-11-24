@@ -19,6 +19,14 @@
  *   A theme sets `--page-margin` and stops there; it never writes `@page`, so
  *   it cannot redeclare the rule inconsistently.
  *
+ * Because theme values arrive as untyped CSS, a theme can also arrive *wrong*:
+ * it can omit the margin, or paint a dark sheet and leave the page number the
+ * grey chosen for white paper. {@link PAGE_GEOMETRY_INVARIANTS} is the
+ * declarative list of the cross-variable rules that would otherwise be
+ * unstated, and {@link violatedInvariants} reports a theme that breaks one —
+ * by name, all at once, without throwing. The rules are data so that a sixth
+ * one is one entry here rather than a new branch in every test.
+ *
  * The emitted rule reads each variable with the geometry default as its
  * fallback, which is what lets an unthemed document stay printable while a
  * theme still wins.
@@ -28,6 +36,8 @@
  * `background` paints the sheet, and `@bottom-center` really does print a page
  * number — so the footer is emitted, not deleted as a WeasyPrint leftover.
  */
+
+import { stripComments } from './mermaid-styles/mermaid-styles.js';
 
 /**
  * Name under which the `@page` rule is emitted as its own stylesheet layer.
@@ -232,6 +242,123 @@ function coverRule(geometry) {
     '  @bottom-center { content: none; }',
     '}',
   ].join('\n');
+}
+
+/**
+ * @typedef {Object} PageGeometryInvariant
+ * @property {string} name       Short name of the rule, used in findings.
+ * @property {string} purpose    Why the rule exists, in one sentence.
+ * @property {ReadonlyArray<string>} requires
+ *   Variables a theme must declare, as {@link PAGE_GEOMETRY_VARIABLES} names them.
+ * @property {string|null} when
+ *   Variable whose presence — declared *with a value* — activates the rule, or
+ *   `null` when it always applies. A hollow declaration is not presence: it
+ *   resolves to nothing in `var()`, so the variable's effect never happens.
+ */
+
+/**
+ * @typedef {Object} PageGeometryFinding
+ * @property {string} invariant  The {@link PageGeometryInvariant} name that failed.
+ * @property {ReadonlyArray<string>} missing  Variables the theme does not declare.
+ * @property {string} message    One sentence naming the theme fault and its fix.
+ */
+
+/**
+ * The cross-variable rules every bundled theme must satisfy.
+ *
+ * This is the interface a theme is held to, in one declarative place: adding a
+ * sixth rule is one entry here, not another bespoke branch inside a test. The
+ * shape mirrors `MERMAID_VARIABLES` — each entry names what it requires and
+ * the purpose it serves — and the conditional case is data too: `when` names
+ * the variable whose presence activates `requires`.
+ *
+ * Deliberately minimal. Typographic footer overrides stay optional because
+ * {@link DEFAULT_PAGE_GEOMETRY} owns the default typography; a rule here is a
+ * fault a theme cannot inherit its way out of, not a preference.
+ *
+ * @type {ReadonlyArray<PageGeometryInvariant>}
+ */
+export const PAGE_GEOMETRY_INVARIANTS = Object.freeze([
+  Object.freeze({
+    name: 'page-margin',
+    purpose:
+      'Every theme states its own page margin, so the margin is a theme value '
+      + 'rather than a default nobody chose.',
+    requires: Object.freeze([PAGE_GEOMETRY_VARIABLES.margin]),
+    when: null,
+  }),
+  Object.freeze({
+    name: 'footer-contrast',
+    purpose:
+      'A theme that paints the sheet darker or lighter than the default also '
+      + 'picks the page-number ink, so the footer stays readable on its own '
+      + 'background instead of inheriting ink chosen for white paper.',
+    requires: Object.freeze([PAGE_GEOMETRY_VARIABLES.footerColor]),
+    when: PAGE_GEOMETRY_VARIABLES.background,
+  }),
+]);
+
+/**
+ * Variables a stylesheet declares, and the subset it declares with no value.
+ *
+ * `--x: ;` resolves to the empty string in `var()`, so the declaration is
+ * dropped and the reader falls back — a theme that looks like it says
+ * something says nothing. An empty custom property is treated as missing, as
+ * `emptyDeclarations()` in the Mermaid styling module already does.
+ *
+ * @param {string} css  A theme's CSS text, with comments already removed.
+ * @returns {{declared: Set<string>, empty: Set<string>}}
+ */
+function geometryDeclarations(css) {
+  const declared = new Set();
+  const empty = new Set();
+
+  for (const match of css.matchAll(/(--page-[\w-]+)\s*:/g)) declared.add(match[1]);
+  for (const match of css.matchAll(/(--page-[\w-]+)\s*:\s*(?:;|$)/gm)) empty.add(match[1]);
+
+  return { declared, empty };
+}
+
+/**
+ * Registered invariants a theme violates.
+ *
+ * Returned rather than thrown, for the same reason `missingVariables()` is: a
+ * caller can report every violation at once instead of stopping at the first.
+ * Order follows {@link PAGE_GEOMETRY_INVARIANTS}, so findings read in the same
+ * order as the contract they violate.
+ *
+ * Comment text is stripped first. The themes mention variables in prose to
+ * explain what the module owns, and a check that could not tell a comment from
+ * a declaration would forbid the explanation.
+ *
+ * @param {string} css  A theme's CSS text.
+ * @returns {Array<PageGeometryFinding>} One finding per violated invariant.
+ */
+export function violatedInvariants(css) {
+  const { declared, empty } = geometryDeclarations(stripComments(css));
+  const findings = [];
+
+  for (const invariant of PAGE_GEOMETRY_INVARIANTS) {
+    // `when` asks whether the theme actually does the thing the rule is about.
+    // A hollow declaration resolves to nothing in `var()`, so it does not.
+    if (invariant.when !== null
+      && (!declared.has(invariant.when) || empty.has(invariant.when))) continue;
+
+    const missing = invariant.requires.filter((name) => !declared.has(name) || empty.has(name));
+    if (missing.length === 0) continue;
+
+    const context = invariant.when === null
+      ? `every theme must satisfy "${invariant.name}"`
+      : `a theme that declares ${invariant.when} must also satisfy "${invariant.name}"`;
+
+    findings.push(Object.freeze({
+      invariant: invariant.name,
+      missing: Object.freeze(missing),
+      message: `${context}: missing ${missing.join(', ')}. ${invariant.purpose}`,
+    }));
+  }
+
+  return findings;
 }
 
 /**
