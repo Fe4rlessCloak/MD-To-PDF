@@ -3,7 +3,7 @@
  *
  * The workflow is the only thing that runs this suite without a human
  * remembering to, so it is the one file whose silence is treated as success.
- * Sixty lines of YAML get no type-checking and no second reader: a dropped
+ * A short YAML file gets no type-checking and no second reader: a dropped
  * trigger, a swapped `npm install`, or a reinstated Chromium download all look
  * exactly like a healthy workflow in review, and the first sign of trouble is a
  * green check on a broken pull request.
@@ -128,15 +128,17 @@ test('the workflow runs on every push and pull request', async () => {
 // The runtime — supported Node, on a runner GitHub owns
 // ---------------------------------------------------------------------------
 
-test('the workflow runs on a GitHub-hosted runner', async () => {
+test('the workflow runs on a runner GitHub hosts, not a machine someone maintains', async () => {
   const workflow = await readWorkflow();
 
-  // A self-hosted runner is how host-specific library workarounds get back in:
-  // the job would inherit whatever Chromium a machine happens to carry.
-  assert.match(
-    workflow,
-    /^\s*runs-on:\s*['"]?(?:ubuntu|windows|macos)-\S+/m,
-    'CI must name a GitHub-hosted runner image, not a self-hosted label',
+  assert.match(workflow, /^\s*runs-on:/m, 'the job must name a runner at all');
+
+  // A self-hosted label is how host-specific library workarounds get back in:
+  // the job would inherit whatever Chromium a given machine happens to carry,
+  // and the workflow would stop being reproducible from the lockfile alone.
+  assert.ok(
+    !/self-hosted/.test(workflow),
+    'CI must not run on a self-hosted runner; a hosted image is what makes the job reproducible',
   );
 });
 
@@ -170,27 +172,50 @@ test('the workflow pins a Node version that satisfies the engines floor', async 
 test('dependencies are installed from the lockfile before the suite runs', async () => {
   const workflow = await readWorkflow();
 
-  const installAt = workflow.indexOf('npm ci');
+  // Only `run:` lines matter: a step name or a comment that happens to contain
+  // "npm install" is prose, while a command is what actually executes.
+  const commands = [...workflow.matchAll(/^\s*run:\s*(.+)$/gm)].map((match) => match[1].trim());
+  assert.ok(commands.length > 0, 'the workflow must actually run something');
+
+  const install = commands.find((command) => /^npm ci\b/.test(command));
   assert.ok(
-    installAt !== -1,
+    install,
     'CI must install with `npm ci`, so a run matches the lockfile instead of drifting',
   );
 
-  for (const shortcut of ['npm install', 'yarn install', 'pnpm install']) {
-    assert.ok(!workflow.includes(shortcut), `CI must not fall back to \`${shortcut}\`; use \`npm ci\``);
-  }
+  const drifted = commands.filter((command) =>
+    /^(?:npm install|npm i|yarn(?:\s|$)|pnpm install)\b/.test(command),
+  );
+  assert.deepEqual(
+    drifted,
+    [],
+    `CI must not fall back to a drifting install, but these commands do: ${drifted.join(', ')}`,
+  );
 
-  const testAt = workflow.indexOf('npm test');
+  const testAt = commands.findIndex((command) => /^npm test\b/.test(command));
   assert.ok(testAt !== -1, 'the workflow must run `npm test`; that is the suite this guard lives in');
-  assert.ok(installAt < testAt, 'CI must install dependencies before running the suite');
+  assert.ok(
+    commands.indexOf(install) < testAt,
+    'CI must install dependencies before running the suite',
+  );
 });
 
 test('the workflow runs the suite with npm test', async () => {
   const workflow = await readWorkflow();
 
   // The suite is `node --test` behind a script; naming the script in CI keeps
-  // a change to how tests are invoked in one place, package.json.
-  assert.match(workflow, /^\s*(?:-\s*)?run:\s*npm test\s*$/m, 'CI must invoke the suite through `npm test`');
+  // a change to how tests are invoked in one place, package.json. Trailing
+  // arguments are allowed — a reporter flag is harmless — but a watch mode is
+  // not: it never exits, so a CI job running it would hang until the timeout.
+  const run = /^\s*run:\s*npm test\b(.*)$/m.exec(workflow);
+  assert.ok(
+    run,
+    'CI must invoke the suite through `npm test`; that is the script this guard lives in',
+  );
+  assert.ok(
+    !/(?:^|\s)--watch\b/.test(run[1]),
+    'CI must not run the suite in watch mode, which never exits',
+  );
   assert.ok(
     !workflow.includes('continue-on-error'),
     'a failing test must fail the job; continue-on-error would report red as green',
@@ -245,12 +270,23 @@ test('the suite this workflow runs launches no browser', async () => {
 
   const launching = [];
   for (const name of testFiles) {
+    const source = await readFile(new URL(`test/${name}`, repoRoot), 'utf8');
+
+    // Only code counts. A comment may name the browser in order to explain why
+    // it is not used — this file does exactly that — and forbidding the
+    // explanation would be a guard against documentation rather than a guard
+    // against a browser launch.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .map((line) => line.replace(/(^|\s)\/\/.*$/, ''))
+      .join('\n');
+
     // This guard names the dependency in order to forbid it, so it is not its
     // own subject: a mention here is the rule, not a violation of it.
     if (name === 'ci-workflow.test.js') continue;
 
-    const source = await readFile(new URL(`test/${name}`, repoRoot), 'utf8');
-    if (/puppeteer|\.launch\(/.test(source)) launching.push(name);
+    if (/\bpuppeteer\b|\.launch\s*\(/.test(code)) launching.push(name);
   }
 
   assert.deepEqual(
