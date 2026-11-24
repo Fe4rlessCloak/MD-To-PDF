@@ -38,6 +38,83 @@ export const MERMAID_CDN_URL =
 export const NORMALIZE_VARIABLE = '--mermaid-normalize';
 
 /**
+ * CSS custom property a theme defines to select Mermaid's built-in theme.
+ *
+ * Same cross-language contract as {@link NORMALIZE_VARIABLE}, and the same
+ * shape of answer: a theme that omits it says "leave Mermaid's own theme
+ * alone", and this program then initialises with `base`, the theme Mermaid
+ * parameterises from CSS variables. A theme that names a runtime theme — the
+ * OLED theme names `dark` — gets that theme for every diagram family at once,
+ * including the Gantt bars and state clusters the shared block never paints,
+ * because Mermaid itself reads the name before it emits a single colour.
+ *
+ * **Why a variable and not a document option.** The theme is the thing that
+ * knows its own surface: a black sheet needs dark diagram surfaces and a white
+ * one does not, and the stylesheet already carries that knowledge as a palette.
+ * Threading a theme name from the CLI through assembly to the browser program
+ * would give the same fact a second owner that could disagree with the CSS
+ * variables sitting beside it.
+ *
+ * **Read before {@link mermaidInitOptions}, not after render.** Mermaid bakes
+ * its theme into the CSS it generates per diagram, so the name has to be known
+ * while `mermaid.initialize` runs; a read afterwards would repaint nothing.
+ *
+ * @type {string}
+ */
+export const THEME_VARIABLE = '--mermaid-theme';
+
+/**
+ * Every root custom property this browser program reads at render time.
+ *
+ * Published as one list so a theme contract check can tell a property the
+ * program owns from one the shared styling block owns, without a second copy
+ * of the names: a `--mermaid-*` declaration in a theme that appears here is
+ * read by the program, and anything else has to be in `MERMAID_VARIABLES`.
+ * Adding a read means adding its name here, and the contract test then knows
+ * about it without being edited.
+ *
+ * A frozen array rather than a `Set`, for the same reason
+ * `MERMAID_VARIABLES` is one: `Object.freeze` does not stop `Set.add`, so a
+ * frozen `Set` would promise an immutability it cannot deliver.
+ *
+ * @type {ReadonlyArray<string>}
+ */
+export const BOOTSTRAP_VARIABLES = Object.freeze([NORMALIZE_VARIABLE, THEME_VARIABLE]);
+
+/**
+ * Theme Mermaid initialises with when no theme selects one.
+ *
+ * `base` is Mermaid's variable-driven theme rather than one of its fixed
+ * palettes: it is what lets a diagram inherit a theme's fonts and colours
+ * through the shared block. Naming it here keeps the default in one place
+ * instead of a literal at the call site and another in the options factory.
+ *
+ * @type {string}
+ */
+export const DEFAULT_MERMAID_THEME = 'base';
+
+/**
+ * Read a root custom property and normalise its value.
+ *
+ * The two properties this program reads from the root are both strings, and
+ * both mean "nothing declared" when the computed value is empty or whitespace
+ * — a stylesheet declaring `--x: ;` is read back as empty by
+ * `getPropertyValue`. Trimming first is what makes an empty declaration and an
+ * absent one the same answer here, rather than one of them becoming a theme
+ * named `''`. A caller that needs a different fallback applies it to the
+ * returned string.
+ *
+ * @param {CSSStyleDeclaration} rootStyle  Computed style of the root element.
+ * @param {string} name  Custom property name, e.g. `--mermaid-theme`.
+ * @param {string} [fallback]  Value to use when the property is unset or empty.
+ * @returns {string}
+ */
+export function rootVariableValue(rootStyle, name, fallback = '') {
+  const value = rootStyle.getPropertyValue(name).trim();
+  return value === '' ? fallback : value;
+}
+
+/**
  * Ink forced onto labels sitting on a dark author-supplied fill.
  *
  * @type {string}
@@ -56,15 +133,20 @@ export const DARK_LUMINANCE_THRESHOLD = 128;
  * Mermaid initialisation options.
  *
  * Returned rather than hoisted into a constant so a caller cannot mutate the
- * shared object; `theme: 'base'` is what makes diagrams inherit fonts and CSS
- * variables from the document.
+ * shared object. `theme` is a parameter because it is the one option a theme
+ * decides: `base` is what makes diagrams inherit fonts and CSS variables from
+ * the document, and a theme that names a built-in theme — OLED picks `dark` —
+ * gets that theme's own palette for every diagram family. The default is
+ * {@link DEFAULT_MERMAID_THEME} rather than a literal here, so the fallback is
+ * stated once.
  *
+ * @param {string} [theme=DEFAULT_MERMAID_THEME]  Resolved Mermaid theme name.
  * @returns {Object} A fresh options object for `mermaid.initialize`.
  */
-export function mermaidInitOptions() {
+export function mermaidInitOptions(theme = DEFAULT_MERMAID_THEME) {
   return {
     startOnLoad: false,
-    theme: 'base',
+    theme,
     securityLevel: 'loose',
     suppressErrorRendering: true,
     flowchart: {
@@ -274,8 +356,16 @@ export async function runMermaidBootstrap({
   try {
     const nodes = document_.querySelectorAll('.mermaid');
     if (nodes.length > 0) {
+      // The theme is resolved before the runtime is loaded and before any
+      // diagram is initialised: Mermaid writes its theme into the CSS it
+      // generates per diagram, so a name learned later would paint nothing.
+      // Both properties come off the same root computed style; only this one
+      // has to be read this early.
+      const rootStyle = computedStyle(document_.documentElement);
+      const theme = rootVariableValue(rootStyle, THEME_VARIABLE, DEFAULT_MERMAID_THEME);
+
       const mermaid = await loadRuntime();
-      mermaid.initialize(mermaidInitOptions());
+      mermaid.initialize(mermaidInitOptions(theme));
 
       // Render each diagram independently so one broken diagram cannot take
       // down the whole document.
@@ -292,9 +382,7 @@ export async function runMermaidBootstrap({
       }
 
       // Opt-in, read back from the theme at render time.
-      const normalize = computedStyle(document_.documentElement)
-        .getPropertyValue(NORMALIZE_VARIABLE)
-        .trim();
+      const normalize = rootVariableValue(computedStyle(document_.documentElement), NORMALIZE_VARIABLE);
       if (normalize) {
         normalizeLabelColors(document_, computedStyle);
       }

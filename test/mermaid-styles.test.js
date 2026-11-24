@@ -30,11 +30,21 @@ import {
   redeclaredSelectors,
   stripComments,
 } from '../src/core/mermaid-styles/mermaid-styles.js';
-import { NORMALIZE_VARIABLE } from '../src/core/mermaid-bootstrap.js';
+import { NORMALIZE_VARIABLE, THEME_VARIABLE, BOOTSTRAP_VARIABLES } from '../src/core/mermaid-bootstrap.js';
 import { bundledThemes, readTheme } from './helpers/themes.js';
 
 /** The block's own text. */
 const block = () => mermaidStylesheetSource();
+
+/**
+ * Bootstrap-owned property names, as a membership set.
+ *
+ * The list itself is owned by `mermaid-bootstrap.js`, because that module owns
+ * the reads; this is only the lookup shape the scans below want. A frozen
+ * array is what the module can honestly publish — `Object.freeze` does not
+ * stop `Set.add`, so a frozen `Set` would promise immutability it cannot keep.
+ */
+const bootstrapOwned = new Set(BOOTSTRAP_VARIABLES);
 
 /**
  * Split comment-stripped CSS into rules: the selector list of each, and its
@@ -307,6 +317,28 @@ test('the OLED divergence is declared as optional variables, not extra selectors
   }
 });
 
+test('the OLED theme selects Mermaid’s dark theme and no light theme does', async () => {
+  // The theme selection is a palette entry, not a selector: the OLED sheet
+  // names a Mermaid theme and the browser program reads it. Every light theme
+  // omits it deliberately, so Mermaid keeps the base theme whose colours it
+  // was designed around.
+  for (const theme of await bundledThemes()) {
+    const css = await readTheme(theme, { stripComments: true });
+    const declared = new RegExp(`${THEME_VARIABLE}\\s*:\\s*([^;}]*)`).exec(css);
+
+    if (theme === 'oled-style.css') {
+      assert.ok(declared, 'the OLED theme must select a Mermaid theme explicitly');
+      assert.equal(declared[1].trim(), 'dark');
+    } else {
+      assert.equal(
+        declared,
+        null,
+        `${theme} must omit ${THEME_VARIABLE}; a light theme keeps Mermaid's base palette`,
+      );
+    }
+  }
+});
+
 test('every --mermaid-* variable read by the block or declared by a theme is in MERMAID_VARIABLES', async () => {
   const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
   const blockCss = stripComments(block());
@@ -318,9 +350,48 @@ test('every --mermaid-* variable read by the block or declared by a theme is in 
   for (const theme of await bundledThemes()) {
     const themeCss = await readTheme(theme, { stripComments: true });
     for (const match of themeCss.matchAll(/(--mermaid-[\w-]+)\s*:/g)) {
-      if (match[1] === NORMALIZE_VARIABLE) continue;
+      // Bootstrap-owned properties are read by the browser program at render
+      // time, not by the shared block, so they are recognised beside the
+      // block's contract rather than inside it. The set comes from the module
+      // that owns the reads, so it cannot drift from what the program reads.
+      if (bootstrapOwned.has(match[1])) continue;
       assert.ok(known.has(match[1]), `${theme} declares ${match[1]}, which is missing from MERMAID_VARIABLES`);
     }
+  }
+});
+
+test('bootstrap-owned properties are recognised beside the block contract, and a typo still fails', async () => {
+  // Acceptance for issue #18: the contract test has to know that some
+  // `--mermaid-*` names belong to the browser program rather than to the
+  // shared block. Both owners are named here, so a new bootstrap-owned
+  // property is one line in the program and no edit in this test.
+  assert.deepEqual(
+    [...bootstrapOwned].sort(),
+    [NORMALIZE_VARIABLE, THEME_VARIABLE].sort(),
+    'the bootstrap owns the normalisation opt-in and the theme selection, and nothing else',
+  );
+
+  // Recognition must not become a blanket exemption: a misspelling of the
+  // theme variable still fails, which is the failure this check exists for.
+  const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
+  const typo = `${THEME_VARIABLE}-drak`;
+  assert.ok(!known.has(typo) && !bootstrapOwned.has(typo), `${typo} must not be recognised`);
+
+  const typoDeclarations = [...stripComments(`:root { ${typo}: dark; }`).matchAll(/(--mermaid-[\w-]+)\s*:/g)]
+    .map((match) => match[1])
+    .filter((name) => !bootstrapOwned.has(name));
+  assert.deepEqual(typoDeclarations, [typo], 'a misspelled bootstrap property must still be reported');
+});
+
+test('the bootstrap-owned properties stay out of the required set', () => {
+  // A light theme must not be forced to declare either one: the theme
+  // selection defaults to Mermaid's own base theme, and normalisation changes
+  // its colours.
+  for (const name of BOOTSTRAP_VARIABLES) {
+    assert.ok(
+      !requiredVariableNames().includes(name),
+      `${name} is read by the browser program and must remain optional for a theme`,
+    );
   }
 });
 

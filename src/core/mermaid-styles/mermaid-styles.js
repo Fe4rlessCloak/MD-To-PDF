@@ -30,6 +30,15 @@
  * {@link MERMAID_VARIABLES}: making it required would force the light default
  * to opt in, which would change its colours. It stays in the four themes that
  * define it today.
+ *
+ * **Two owners, one prefix.** `--mermaid-theme` is the second property the
+ * browser program reads from the root, and it is likewise not a palette entry:
+ * it selects Mermaid's own theme rather than a colour this block uses. Both
+ * names are published by the program as `BOOTSTRAP_VARIABLES`, so the contract
+ * check that every declared `--mermaid-*` name is accounted for can recognise
+ * them without a list of its own — and without exempting the prefix, which
+ * would let a typo through. A theme declares them or omits them; the block
+ * never mentions either.
  */
 
 import { readFileSync } from 'node:fs';
