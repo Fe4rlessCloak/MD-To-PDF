@@ -251,7 +251,9 @@ function coverRule(geometry) {
  * @property {ReadonlyArray<string>} requires
  *   Variables a theme must declare, as {@link PAGE_GEOMETRY_VARIABLES} names them.
  * @property {string|null} when
- *   Variable whose presence activates the rule, or `null` when it always applies.
+ *   Variable whose presence — declared *with a value* — activates the rule, or
+ *   `null` when it always applies. A hollow declaration is not presence: it
+ *   resolves to nothing in `var()`, so the variable's effect never happens.
  */
 
 /**
@@ -337,7 +339,10 @@ export function violatedInvariants(css) {
   const findings = [];
 
   for (const invariant of PAGE_GEOMETRY_INVARIANTS) {
-    if (invariant.when !== null && !declared.has(invariant.when)) continue;
+    // `when` asks whether the theme actually does the thing the rule is about.
+    // A hollow declaration resolves to nothing in `var()`, so it does not.
+    if (invariant.when !== null
+      && (!declared.has(invariant.when) || empty.has(invariant.when))) continue;
 
     const missing = invariant.requires.filter((name) => !declared.has(name) || empty.has(name));
     if (missing.length === 0) continue;

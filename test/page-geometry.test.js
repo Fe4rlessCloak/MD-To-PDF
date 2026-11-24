@@ -298,6 +298,19 @@ test('a conditional requirement declared with no value still violates the contra
   );
 });
 
+test('a hollow --page-background paints nothing, so the contrast rule does not activate', () => {
+  // `--page-background: ;` resolves to the empty string, the declaration is
+  // dropped, and the sheet falls back to the transparent default. The rule is
+  // about a painted sheet, so a hollow declaration must not demand footer ink.
+  const hollowSheet = ':root { --page-margin: 2cm; --page-background: ; }';
+
+  assert.deepEqual(
+    violatedInvariants(hollowSheet),
+    [],
+    'a sheet that is not painted does not need its own page-number ink',
+  );
+});
+
 test('a variable named only in a comment is not a declaration', () => {
   // The theme headers explain what the module owns and mention variables by
   // name. A check that could not tell prose from a declaration would forbid the
