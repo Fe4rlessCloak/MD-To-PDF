@@ -17,8 +17,10 @@ import { readFile } from 'node:fs/promises';
 
 import {
   DEFAULT_PAGE_GEOMETRY,
+  PAGE_GEOMETRY_INVARIANTS,
   PAGE_GEOMETRY_VARIABLES,
   pageGeometry,
+  violatedInvariants,
 } from '../src/core/page-geometry.js';
 import { stripComments } from '../src/core/mermaid-styles/mermaid-styles.js';
 import { bundledThemes, readTheme as readBundledTheme } from './helpers/themes.js';
@@ -192,6 +194,38 @@ test('no bundled theme styles a content wrapper nothing can emit', async () => {
     const css = await readTheme(name);
     assert.ok(!/\.content\b/.test(css), `${name} must not carry .content rules`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The invariant contract — one declarative entry per cross-variable rule
+// ---------------------------------------------------------------------------
+
+test('a synthetic theme that declares every required variable violates nothing', () => {
+  const valid = ':root { --page-margin: 2cm 2.2cm; --page-background: #ffffff; '
+    + '--page-footer-color: #333333; }';
+
+  assert.deepEqual(
+    violatedInvariants(valid),
+    [],
+    'a theme declaring the required geometry must pass every registered invariant',
+  );
+});
+
+test('a theme that omits --page-margin is reported by the invariant it violates', () => {
+  const withoutMargin = ':root { --page-background: #ffffff; --page-footer-color: #333333; }';
+
+  const violated = violatedInvariants(withoutMargin);
+
+  assert.deepEqual(
+    violated.map((finding) => finding.invariant),
+    ['page-margin'],
+    'the missing margin must be reported by name, not silently accepted',
+  );
+  assert.match(
+    violated[0].message,
+    /--page-margin/,
+    'the finding must name the variable a theme author has to add',
+  );
 });
 
 // ---------------------------------------------------------------------------
