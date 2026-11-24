@@ -4,8 +4,7 @@ A green suite proves the Markdown became HTML. It proves nothing about what Chro
 any change that can affect rendered output needs a real PDF opened and looked at. `AGENTS.md`
 states the rule; this file is the procedure.
 
-Output is gitignored (`*.pdf`), so render into the working tree or a scratch path — either way it
-never lands in a commit. The fixture commands and the healthy baseline live in the README:
+Output is gitignored (`*.pdf`), and the README examples render to `/tmp` so generated files stay outside the working tree and never land in a commit. The fixture commands and the healthy baseline live in the README:
 [Manual render check](../../README.md#manual-render-check).
 
 ## GUI desktop

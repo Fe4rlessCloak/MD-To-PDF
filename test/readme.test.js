@@ -28,7 +28,6 @@ import {
 
 const repoRoot = new URL('../', import.meta.url);
 const readme = () => readFile(new URL('README.md', repoRoot), 'utf8');
-const read = (url) => readFile(url, 'utf8');
 
 test('the README cites symbols, never line numbers', async () => {
   // `path.js:42` inside a link, and a bare `path.js:42` in prose, are both
@@ -47,7 +46,7 @@ test('every relative link and heading fragment in the README resolves', async ()
   const targets = localTargets(await readme());
   assert.ok(targets.length > 0, 'the README must link into the repo');
 
-  const { missingFiles, missingFragments } = await brokenTargets(targets, repoRoot, read);
+  const { missingFiles, missingFragments } = await brokenTargets(targets, repoRoot);
 
   assert.deepEqual(missingFiles, [], `the README links to files that do not exist: ${missingFiles.join(', ')}`);
   assert.deepEqual(

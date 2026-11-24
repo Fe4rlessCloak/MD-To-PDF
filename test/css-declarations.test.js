@@ -14,7 +14,6 @@ import assert from 'node:assert/strict';
 
 import {
   declarations,
-  emptyNames,
   stripComments,
 } from '../src/core/css-declarations.js';
 
@@ -86,12 +85,6 @@ test('a later declaration of the same property wins, as the cascade does', () =>
 
   assert.ok(declared.has('--page-margin'));
   assert.ok(empty.has('--page-margin'), 'the hollow overriding declaration is the one that applies');
-});
-
-test('emptyNames answers for a prefix without the caller holding the map', () => {
-  const css = ':root { --page-margin: 2cm; --page-background: ; --mermaid-ink: ; }';
-
-  assert.deepEqual([...emptyNames(stripComments(css), '--page-')], ['--page-background']);
 });
 
 test('CSS with no custom properties reads as declaring nothing', () => {

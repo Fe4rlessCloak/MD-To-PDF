@@ -22,6 +22,7 @@
     "./src/core/katex-bootstrap": "./src/core/katex-bootstrap.js",
     "./src/core/print-styles/print-styles": "./src/core/print-styles/print-styles.js",
     "./src/core/mermaid-styles/mermaid-styles": "./src/core/mermaid-styles/mermaid-styles.js",
+    "./src/core/css-declarations": "./src/core/css-declarations.js",
     "./src/core/page-geometry": "./src/core/page-geometry.js",
     "./src/core/render-pdf": "./src/core/render-pdf.js",
     "./src/core/write-output": "./src/core/write-output.js",

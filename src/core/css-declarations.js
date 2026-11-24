@@ -77,17 +77,3 @@ export function declarations(css, prefix) {
 
   return { declared: new Set(properties.keys()), empty };
 }
-
-/**
- * Property names that are declared but carry no value.
- *
- * Kept separately from {@link declarations} because callers that only need the
- * hollow set should not have to hold the whole map.
- *
- * @param {string} withoutComments  CSS text with comments already removed.
- * @param {string} [prefix]  Restrict to properties starting with this.
- * @returns {Set<string>} Names declared with no value.
- */
-export function emptyNames(withoutComments, prefix) {
-  return declarations(withoutComments, prefix).empty;
-}

@@ -21,7 +21,7 @@ Module inventory, usage and the theme table live in the [README](README.md); voc
 - **Run `npm test` before every commit.** It is browser-free and takes seconds, so a red suite is never a scheduling problem.
 - **Write the test with the change, at the seam the change lives behind.** Assert observable behaviour — a rendered structure, a resolved value, a raised error — not internal calls. A test that has to change during a refactor of unchanged behaviour is testing the wrong thing.
 - **Keep fixture documents aligned with the rendering edge cases you touch.** [`documents/test-fixtures.md`](documents/test-fixtures.md) pins Mermaid wide, tall, small and long-label cases; [`documents/test-math.md`](documents/test-math.md) pins mixed math and diagrams, the combination that historically broke. A new edge case gets a line in a fixture and an assertion, not a code comment.
-- **Extend the documentation guard when you add a checkable doc claim.** `test/readme.test.js` guards the README and `test/agent-instructions.test.js` guards this file: both fail on line-number anchors and unresolvable paths, and the latter also fails on heading fragments that name no real heading and on host-specific absolute paths.
+- **Extend the documentation guard when you add a checkable doc claim.** `test/readme.test.js` guards the README and `test/agent-instructions.test.js` guards this file and [docs/agents/visual-verification.md](docs/agents/visual-verification.md): both fail on line-number anchors, unresolvable paths, and heading fragments that name no real heading, and the agent-instructions guard also fails on host-specific absolute paths.
 
 ### Architecture and domain discipline
 

@@ -14,7 +14,7 @@
  * human from spending their attention on it.
  */
 
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 /** File extensions a line-number anchor can appear after. */
 const ANCHORED_FILE = /[\w./-]+\.(?:js|css|md|json|ya?ml):\d+\b/g;
@@ -113,11 +113,11 @@ export function headingSlugs(markdown) {
  * because the path check alone passes. Both are reported here.
  *
  * @param {Array<string>} targets  From {@link localTargets}.
- * @param {URL} root  Repository root, for resolving relative paths.
- * @param {Function} read  Async reader, `(URL) => Promise<string>`.
+ * @param {URL} base  Document or directory URL that relative targets resolve against.
+ * @param {Function} [read]  Optional async reader, `(URL) => Promise<string>`.
  * @returns {Promise<{missingFiles: Array<string>, missingFragments: Array<string>}>}
  */
-export async function brokenTargets(targets, root, read) {
+export async function brokenTargets(targets, base, read = (url) => readFile(url, 'utf8')) {
   const missingFiles = [];
   const missingFragments = [];
 
@@ -125,7 +125,7 @@ export async function brokenTargets(targets, root, read) {
     const [path, fragment] = target.split('#');
 
     try {
-      await stat(new URL(path, root));
+      await stat(new URL(path, base));
     } catch {
       missingFiles.push(target);
       continue;
@@ -137,7 +137,7 @@ export async function brokenTargets(targets, root, read) {
       continue;
     }
 
-    const markdown = await read(new URL(path, root));
+    const markdown = await read(new URL(path, base));
     if (!headingSlugs(markdown).has(fragment)) missingFragments.push(target);
   }
 
@@ -160,6 +160,6 @@ export async function brokenTargets(targets, root, read) {
  * @returns {Array<string>} The offending paths.
  */
 export function hostPaths(text) {
-  const pattern = /(?:^|[\s"'(=])(\/(?:home|srv|Users)\/[\w./-]*|[A-Za-z]:\\[\w.\\-]+)/g;
+  const pattern = /(?:^|[\s"'(=`])(\/(?:home|srv|Users)\/[\w./-]*|[A-Za-z]:\\[\w.\\-]+)/g;
   return [...text.matchAll(pattern)].map((match) => match[1]);
 }
