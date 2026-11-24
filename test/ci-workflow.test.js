@@ -76,7 +76,7 @@ function triggerKeys(workflow) {
     return inline
       .replace(/^\[|\]$/g, '')
       .split(',')
-      .map((key) => key.trim())
+      .map((key) => key.trim().replace(/^['"]|['"]$/g, ''))
       .filter(Boolean);
   }
 
