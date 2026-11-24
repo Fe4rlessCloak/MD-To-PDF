@@ -228,6 +228,36 @@ test('a theme that omits --page-margin is reported by the invariant it violates'
   );
 });
 
+test('a theme that paints a sheet background without footer ink is reported as a contrast fault', () => {
+  const unreadableFooter = ':root { --page-margin: 2cm; --page-background: #101010; }';
+
+  const violated = violatedInvariants(unreadableFooter);
+
+  assert.deepEqual(
+    violated.map((finding) => finding.invariant),
+    ['footer-contrast'],
+    'a painted sheet without matching footer ink is the fault the rule exists for',
+  );
+  assert.deepEqual(
+    violated[0].missing,
+    ['--page-footer-color'],
+    'the finding must name the ink the theme has to declare',
+  );
+});
+
+test('the contrast rule does not apply to a theme that leaves the sheet unpainted', () => {
+  // The rule is conditional by design: a theme that inherits the transparent
+  // default never needs its own footer ink, and demanding one would duplicate
+  // DEFAULT_PAGE_GEOMETRY into every theme.
+  const unpainted = ':root { --page-margin: 2cm; }';
+
+  assert.deepEqual(
+    violatedInvariants(unpainted),
+    [],
+    'an unpainted theme must not be forced to declare footer ink',
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Discovery: the directory is the source of truth
 // ---------------------------------------------------------------------------

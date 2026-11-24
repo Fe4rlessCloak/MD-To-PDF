@@ -277,6 +277,15 @@ export const PAGE_GEOMETRY_INVARIANTS = Object.freeze([
     requires: Object.freeze([PAGE_GEOMETRY_VARIABLES.margin]),
     when: null,
   }),
+  Object.freeze({
+    name: 'footer-contrast',
+    purpose:
+      'A theme that paints the sheet darker or lighter than the default also '
+      + 'picks the page-number ink, so the footer stays readable on its own '
+      + 'background instead of inheriting ink chosen for white paper.',
+    requires: Object.freeze([PAGE_GEOMETRY_VARIABLES.footerColor]),
+    when: PAGE_GEOMETRY_VARIABLES.background,
+  }),
 ]);
 
 /**
