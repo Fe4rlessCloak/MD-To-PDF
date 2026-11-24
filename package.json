@@ -13,14 +13,21 @@
   "exports": {
     ".": "./convert.js",
     "./src/cli/parse-args": "./src/cli/parse-args.js",
+    "./src/core/document-options": "./src/core/document-options.js",
     "./src/core/load-input": "./src/core/load-input.js",
     "./src/core/render-markdown": "./src/core/render-markdown.js",
     "./src/core/build-html": "./src/core/build-html.js",
+    "./src/core/readiness-protocol": "./src/core/readiness-protocol.js",
+    "./src/core/mermaid-bootstrap": "./src/core/mermaid-bootstrap.js",
+    "./src/core/katex-bootstrap": "./src/core/katex-bootstrap.js",
+    "./src/core/print-styles/print-styles": "./src/core/print-styles/print-styles.js",
+    "./src/core/mermaid-styles/mermaid-styles": "./src/core/mermaid-styles/mermaid-styles.js",
+    "./src/core/page-geometry": "./src/core/page-geometry.js",
     "./src/core/render-pdf": "./src/core/render-pdf.js",
+    "./src/core/write-output": "./src/core/write-output.js",
     "./src/core/errors": "./src/core/errors.js"
   },
   "dependencies": {
-    "katex": "^0.16.11",
     "marked": "^15.0.0",
     "puppeteer": "^24.0.0"
   },

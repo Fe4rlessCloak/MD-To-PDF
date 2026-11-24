@@ -1,267 +1,217 @@
 /**
- * @file Assemble the final HTML document from rendered Markdown content,
- * injected user CSS, Mermaid runtime bootstrap, and KaTeX math rendering.
+ * @file Assemble the final HTML document from rendered Markdown content.
+ *
+ * Assembly's remaining responsibilities are layout and inlining. Every payload
+ * it used to hold as a string now lives in a file:
+ *
+ * - the Mermaid and KaTeX browser programs are modules
+ *   (`mermaid-bootstrap.js`, `katex-bootstrap.js`), inlined as source text and
+ *   invoked at the call site;
+ * - the three print stylesheets are files (`print-styles/`), read and emitted
+ *   in the order `print-styles.js` returns them;
+ * - page geometry is a module (`page-geometry.js`) that emits the `@page`
+ *   rule from a geometry value. Assembly emits it last, after every print
+ *   layer, so the module's rule is the one that decides the page.
+ *
+ * The document is a single HTML file, but not a self-contained one: it makes
+ * three fetches at runtime. Two are the CDN imports inside the bootstraps,
+ * and each is guarded by a node-count check, so a document with no diagrams
+ * and no expressions fetches neither. The third is the KaTeX stylesheet
+ * `<link>` in the head, which is emitted for every document because the glyph
+ * fonts it references are needed the moment any math appears; it is not
+ * gated, so a math-free document still requests it.
  */
+
+import { readFileSync } from 'node:fs';
+import { readinessFlagsSource, FATAL_REPORT_INDEX } from './readiness-protocol.js';
+import {
+  BASE_STYLESHEET_NAME,
+  stylesheetPayload,
+} from './print-styles/print-styles.js';
+import {
+  MERMAID_STYLESHEET_NAME,
+  mermaidStylesheetSource,
+} from './mermaid-styles/mermaid-styles.js';
+import { pageGeometry, PAGE_GEOMETRY_STYLESHEET_NAME } from './page-geometry.js';
+import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
 /**
- * Default base stylesheet — provides safe print defaults.
- * User CSS is appended after this so it takes precedence for typography.
+ * Injected declaration of the readiness protocol. Each bootstrap script is a
+ * module, so it carries its own copy of the flag names rather than sharing a
+ * global; the names themselves come from the protocol module.
  */
-const BASE_CSS = `
-* {
-  box-sizing: border-box;
-}
-body {
-  font-family: Georgia, 'Times New Roman', Times, serif;
-  font-size: 11pt;
-  line-height: 1.6;
-  color: #222;
-  margin: 0;
-  padding: 0;
-}
-@page {
-  margin: 2cm 2.2cm;
-}
-`;
+const READINESS_SOURCE = readinessFlagsSource();
+
+/** Location of the Mermaid browser program that assembly inlines. */
+const MERMAID_PROGRAM_URL = new URL('./mermaid-bootstrap.js', import.meta.url);
+
+/** Location of the KaTeX browser program that assembly inlines. */
+const KATEX_PROGRAM_URL = new URL('./katex-bootstrap.js', import.meta.url);
+
+/** Cached program texts; read once, since every document inlines the same code. */
+const programCache = new Map();
 
 /**
- * Mermaid containment stylesheet — enforces dynamic scaling rules.
- * These are placed *after* user CSS so they cannot be overridden.
+ * Source text of the Mermaid browser program.
+ *
+ * Exported so tests can assert against the real program rather than a copy of
+ * it, and so a caller can see exactly what assembly will inline.
+ *
+ * @returns {string} The program's ESM source.
  */
-const MERMAID_CSS = `
-.mermaid {
-  display: block;
-  overflow: visible;
-  width: 100%;
-  max-height: 45vh;
-  margin: 1.5rem auto;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  text-align: center;
+export function mermaidBootstrapSource() {
+  return programSource(MERMAID_PROGRAM_URL);
 }
-.mermaid svg {
-  display: block;
-  max-width: 100% !important;
-  max-height: 45vh !important;
-  width: auto !important;
-  height: auto !important;
-  margin: 0 auto !important;
-}
-`;
 
 /**
- * KaTeX print-safe stylesheet — ensures math blocks integrate cleanly
- * into the document flow without breaking page layout.
+ * Source text of the KaTeX browser program.
+ *
+ * The counterpart of {@link mermaidBootstrapSource}; exported for the same
+ * reason.
+ *
+ * @returns {string} The program's ESM source.
  */
-const KATEX_CSS = `
-.math-display {
-  display: block;
-  text-align: center;
-  margin: 1em 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  break-inside: avoid;
-  page-break-inside: avoid;
+export function katexBootstrapSource() {
+  return programSource(KATEX_PROGRAM_URL);
 }
-.math-inline {
-  display: inline;
-  white-space: nowrap;
-}
-`;
 
 /**
- * Mermaid client-side bootstrap script.
- * Uses `theme: 'base'` so diagrams inherit fonts and CSS variables.
- * Sets `startOnLoad: false` so we can manually trigger rendering and
- * signal completion via a global flag.
+ * Read and cache a program's source text.
+ * @param {URL} url
+ * @returns {string}
  */
-const MERMAID_BOOTSTRAP = `
-<script type="module">
-let resolveMermaidReady;
-window.__MERMAID_READY__ = new Promise((resolve) => {
-  resolveMermaidReady = resolve;
-});
-window.__MERMAID_ERRORS__ = [];
-window.__MERMAID_DEBUG__ = [];
-
-function isDarkColor(color) {
-  const m = color && color.match(/^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i);
-  if (!m) return false;
-  const luminance = 0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3]);
-  return luminance < 128;
-}
-
-try {
-  const nodes = document.querySelectorAll('.mermaid');
-  if (nodes.length > 0) {
-    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
-
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      securityLevel: 'loose',
-      suppressErrorRendering: true,
-      flowchart: {
-        htmlLabels: false,
-      },
-      sequence: {
-        useMaxWidth: true,
-        htmlLabels: false,
-      },
-      gantt: {
-        useMaxWidth: true,
-      },
-    });
-
-    // Render each diagram independently so one broken diagram cannot take
-    // down the whole document. Failures become a visible error placeholder
-    // and are reported in window.__MERMAID_ERRORS__ for the PDF step.
-    for (const [index, node] of nodes.entries()) {
-      try {
-        const { svg } = await mermaid.render('mermaid-' + index, node.textContent);
-        node.innerHTML = svg;
-      } catch (err) {
-        const message = err && err.message ? err.message : String(err);
-        window.__MERMAID_ERRORS__.push({ index, error: message });
-        document.getElementById('dmermaid-' + index)?.remove();
-        node.textContent = 'Mermaid diagram failed to render: ' + message;
-      }
-    }
-
-    // Optionally strip Mermaid's inline text-colour overrides so the active
-    // theme's stylesheet governs label text. Mermaid compiles style
-    // directives (color) into inline !important declarations, which outrank
-    // any stylesheet rule (even !important ones). Author fill colours are
-    // left intact, and dark author fills receive light text for contrast.
-    const normalize = getComputedStyle(document.documentElement)
-      .getPropertyValue('--mermaid-normalize')
-      .trim();
-    if (normalize) {
-      document.querySelectorAll('.mermaid svg [style]').forEach((el) => {
-        el.style.removeProperty('color');
-      });
-      document.querySelectorAll('.mermaid svg .node').forEach((node) => {
-        const shape = node.querySelector('.label-container, rect, circle, ellipse, polygon, path');
-        if (shape && isDarkColor(getComputedStyle(shape).fill)) {
-          node.querySelectorAll('text, tspan, .label, .nodeLabel').forEach((label) => {
-            label.style.setProperty('fill', '#ffffff', 'important');
-            label.style.setProperty('color', '#ffffff', 'important');
-          });
-        }
-      });
-    }
-
-    // Emit basic render diagnostics for print-layout debugging.
-    window.__MERMAID_DEBUG__ = Array.from(document.querySelectorAll('.mermaid')).map((node, index) => {
-      const svg = node.querySelector('svg');
-      const foreignObjects = svg ? svg.querySelectorAll('foreignObject').length : 0;
-      const nodeRect = node.getBoundingClientRect();
-      const svgRect = svg ? svg.getBoundingClientRect() : null;
-
-      return {
-        index,
-        foreignObjects,
-        container: {
-          width: nodeRect.width,
-          height: nodeRect.height,
-        },
-        svg: svgRect
-          ? {
-              width: svgRect.width,
-              height: svgRect.height,
-            }
-          : null,
-      };
-    });
+function programSource(url) {
+  if (!programCache.has(url.href)) {
+    programCache.set(url.href, readFileSync(url, 'utf8'));
   }
-} catch (err) {
-  const message = err && err.message ? err.message : String(err);
-  window.__MERMAID_ERRORS__.push({ index: -1, error: message });
-} finally {
-  // Signal that rendering is complete so KaTeX and Puppeteer can proceed.
-  window.__MERMAID_RENDER_DONE__ = true;
-  resolveMermaidReady();
+  return programCache.get(url.href);
 }
+
+/**
+ * Neutralise a closing-tag sequence so inlined text cannot end its element.
+ *
+ * Escaping the slash keeps the sequence inert to the HTML parser while
+ * leaving it syntactically valid to the language doing the parsing: `<\\/style`
+ * is still a legal CSS comment terminator and `<\\/script` is still a legal
+ * string in JavaScript, so neither the stylesheet nor the program is damaged.
+ *
+ * Matching is case-insensitive and the replacement preserves the matched
+ * casing, because the HTML parser accepts `</STYLE>` and `</Script>` as
+ * closers: normalising the case would leave a differently-cased closer intact
+ * in the output.
+ *
+ * @param {string} source  Text to inline.
+ * @param {'style'|'script'} tagName  Element the text is going into.
+ * @returns {string}
+ */
+export function neutralizeClosingTag(source, tagName) {
+  return source.replace(new RegExp(`</(${tagName})`, 'gi'), (_, matched) => `<\\/${matched}`);
+}
+
+/**
+ * One bootstrap `<script>` element, for either browser program.
+ *
+ * This is the production adapter over a bootstrap module: the module's source
+ * text is inlined, then its entry point is called with the protocol and the
+ * fatal sentinel. Top-level await is what makes the inlined program's
+ * asynchronous work complete before the enclosing module script does, exactly
+ * as when each program was written inline in its own template literal.
+ *
+ * `RF` and the fatal index are passed in rather than read from a global, so a
+ * program never depends on the spelling of a flag.
+ *
+ * @param {Object} params
+ * @param {string} params.entry    Entry-point function name, e.g. `runMermaidBootstrap`.
+ * @param {string} params.source   The program's ESM source text.
+ * @returns {string} A complete `<script type="module">` element.
+ */
+function bootstrapScript({ entry, source }) {
+  const program = neutralizeClosingTag(source, 'script');
+
+  return `
+<script type="module">
+${READINESS_SOURCE}
+${program}
+
+await ${entry}({ flags: RF, publish: publishFlag, fatalReportIndex: ${FATAL_REPORT_INDEX} });
 </script>
 `;
+}
 
 /**
- * KaTeX client-side bootstrap script.
- * Loads KaTeX from CDN only when math nodes are present and renders all
- * .math-display and .math-inline elements after Mermaid completes.
+ * The Mermaid bootstrap `<script>` element.
+ * @returns {string} A complete `<script type="module">` element.
  */
-const KATEX_BOOTSTRAP = `
-<script type="module">
-window.__MATH_ERRORS__ = [];
-try {
-  // Wait deterministically for Mermaid to finish before mutating the DOM.
-  if (window.__MERMAID_READY__) {
-    await window.__MERMAID_READY__;
-  }
-
-  const displayNodes = document.querySelectorAll('.math-display');
-  const inlineNodes = document.querySelectorAll('.math-inline');
-
-  if (displayNodes.length > 0 || inlineNodes.length > 0) {
-    const { default: katex } = await import('https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.mjs');
-
-    let idx = 0;
-    for (const el of displayNodes) {
-      const raw = el.textContent;
-      try {
-        katex.render(raw, el, { displayMode: true, throwOnError: true });
-      } catch (err) {
-        el.textContent = raw;
-        const message = err && err.message ? err.message : String(err);
-        window.__MATH_ERRORS__.push({ index: idx, kind: 'display', error: message });
-      }
-      idx++;
-    }
-
-    for (const el of inlineNodes) {
-      const raw = el.textContent;
-      try {
-        katex.render(raw, el, { displayMode: false, throwOnError: true });
-      } catch (err) {
-        el.textContent = raw;
-        const message = err && err.message ? err.message : String(err);
-        window.__MATH_ERRORS__.push({ index: idx, kind: 'inline', error: message });
-      }
-      idx++;
-    }
-  }
-} catch (err) {
-  const message = err && err.message ? err.message : String(err);
-  window.__MATH_ERRORS__.push({ index: -1, kind: 'bootstrap', error: message });
-} finally {
-  // Signal that math rendering is complete.
-  window.__MATH_RENDER_DONE__ = true;
+function mermaidBootstrapScript() {
+  return bootstrapScript({
+    entry: 'runMermaidBootstrap',
+    source: mermaidBootstrapSource(),
+  });
 }
-</script>
-`;
+
+/**
+ * The KaTeX bootstrap `<script>` element.
+ *
+ * Same adapter shape as the Mermaid one. It is emitted after the Mermaid
+ * script, and the program itself awaits Mermaid readiness before it queries the
+ * DOM — source order alone would not be enough, because the Mermaid script
+ * hands its work to a promise.
+ *
+ * @returns {string} A complete `<script type="module">` element.
+ */
+function katexBootstrapScript() {
+  return bootstrapScript({
+    entry: 'runKatexBootstrap',
+    source: katexBootstrapSource(),
+  });
+}
 
 /**
  * Build a complete HTML document string.
  *
- * @param {Object} options
- * @param {string}  options.bodyHtml     Rendered Markdown HTML.
- * @param {string|null} options.userCss  Optional user-provided CSS text.
- * @param {string}  [options.title]      Optional document title.
+ * The options object is consumed whole, which means the call site does not
+ * change when an option is added. Assembly is a different matter: it reads the
+ * options it emits, so a new option that reaches the document needs a line
+ * here. `title` is the current example — it is read below and nowhere else.
+ *
+ * @param {Object} params
+ * @param {string}  params.bodyHtml     Rendered Markdown HTML.
+ * @param {string|null} params.userCss  Optional user-provided CSS text.
+ * @param {import('./document-options.js').DocumentOptions} [params.options]
+ *   Document options; supplies the title.
  * @returns {string}
  */
-export function buildHtml({ bodyHtml, userCss, title }) {
-  const stylesheets = [BASE_CSS];
-  if (userCss) stylesheets.push(userCss);
-  stylesheets.push(MERMAID_CSS);
-  stylesheets.push(KATEX_CSS);
+export function buildHtml({ bodyHtml, userCss, options = {} }) {
+  const title = options.title ?? null;
 
-  // Load KaTeX CSS from CDN for proper glyph rendering
-  const katexCssLink =
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">';
+  // The shared Mermaid block is its own layer, spliced in directly after the
+  // base stylesheet: it is a default a theme's palette adjusts, and the
+  // containment and math rules must still outrank it. It is not part of
+  // `PRINT_STYLESHEET_NAMES` because that list is the print stylesheets'
+  // interface, and this block is Mermaid styling, not pagination.
+  //
+  // Emission order is the contract, not an implementation detail — see
+  // `stylesheetPayload`. Layer order is therefore:
+  //   base → mermaid-styles → user → containment → math → page-geometry
+  const layers = [];
+  for (const layer of stylesheetPayload({ userCss })) {
+    layers.push(layer);
+    if (layer.name === BASE_STYLESHEET_NAME) {
+      layers.push({ name: MERMAID_STYLESHEET_NAME, css: mermaidStylesheetSource() });
+    }
+  }
 
-  const styleTag = stylesheets
-    .map((css) => `<style>\n${css.trim().replace(/<\/style/gi, '<\\/style')}\n</style>`)
+  // Page geometry is appended after every print layer. It carries no other
+  // rules, so the contract above is unaffected, and emitting it last means the
+  // module's `@page` cannot be overridden by a stale copy in a theme.
+  layers.push({ name: PAGE_GEOMETRY_STYLESHEET_NAME, css: pageGeometry().css });
+
+  const styleTag = layers
+    .map((layer) => `<style>\n${neutralizeClosingTag(layer.css.trim(), 'style')}\n</style>`)
     .join('\n');
+
+  const katexCssLink =
+    `<link rel="stylesheet" href="${KATEX_STYLESHEET_URL}" crossorigin="anonymous">`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -274,8 +224,8 @@ ${styleTag}
 </head>
 <body>
 ${bodyHtml}
-${MERMAID_BOOTSTRAP}
-${KATEX_BOOTSTRAP}
+${mermaidBootstrapScript()}
+${katexBootstrapScript()}
 </body>
 </html>`;
 }

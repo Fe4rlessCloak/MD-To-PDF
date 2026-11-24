@@ -26,26 +26,23 @@
     --mark-red-ink:   #8f2a1a;
     --diagram-line:   #8a7454;
     --diagram-edge:   #b9a988;
-}
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 2.4cm 2.6cm;
-    background: #f6efe1;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 9pt;
-        color: #5b4a3a;
-    }
-}
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values. */
+    --mermaid-ink: #33291f;
+    --mermaid-ink-on-shape: #33291f;
+    --mermaid-shape-stroke: var(--diagram-edge);
+    --mermaid-shape-stroke-width: 1.25px;
+    --mermaid-line: var(--diagram-line);
+    --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mermaid-label-weight: 400;
 
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
+    /* Page geometry values only; the @page rule is owned by
+       src/core/page-geometry.js. The sheet and page number are tinted to
+       match the paper surface. */
+    --page-margin: 2.4cm 2.6cm;
+    --page-background: #f6efe1;
+    --page-footer-color: #5b4a3a;
 }
 
 /* --- BODY --- */
@@ -56,67 +53,6 @@ body {
     color: var(--ink);
     background: var(--paper);
     counter-reset: h2-counter;
-}
-
-/* --- COVER PAGE --- */
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #3a2c1e;
-    color: var(--paper);
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 28pt;
-    font-weight: 700;
-    margin: 0 0 0.5em 0;
-    color: var(--paper);
-    letter-spacing: 0.5px;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 16pt;
-    font-weight: 400;
-    margin: 0 0 1.5em 0;
-    opacity: 0.9;
-}
-
-.cover .meta {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 11pt;
-    opacity: 0.8;
-    margin-top: 1em;
-    line-height: 1.8;
-}
-
-.cover .divider {
-    width: 60px;
-    height: 3px;
-    background: #c98b4b;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: rgba(201, 139, 75, 0.18);
-    border: 1px solid #c98b4b;
-    border-radius: 4px;
-    padding: 6px 16px;
-    font-size: 10pt;
-    color: #e8bd88;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
@@ -336,59 +272,4 @@ pre {
     color: var(--accent-deep);
     white-space: nowrap;
     width: 30%;
-}
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}
-
-/* --- MERMAID (theme-controlled, fills left to the author) --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-/* Outlines only: author fill colours are preserved. */
-.mermaid svg .node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: var(--diagram-edge) !important;
-    stroke-width: 1.25px;
-}
-
-.mermaid svg .path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .loopLine {
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: var(--diagram-line) !important;
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .noteText {
-    fill: var(--ink) !important;
-    color: var(--ink) !important;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

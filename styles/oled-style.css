@@ -12,29 +12,48 @@
    omits this and keeps author colours untouched. */
 :root {
     --mermaid-normalize: 1;
+
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values.
+
+       This theme's divergence is entirely in these values, and it is the
+       reason two of them are opt-in variables rather than required:
+
+       - --mermaid-shape-fill: Mermaid's default node fill is a pale cream
+         that reads as a glare patch on a black page, so shapes are painted
+         a cold near-white here. Supplying the variable is what activates
+         the shared fill rule; the light themes omit it and keep Mermaid's
+         own per-diagram-type fills.
+
+       - --mermaid-edge-label-bg: an edge label crosses edges, so on a black
+         page it needs an opaque plate behind it or the line strikes through
+         the text.
+
+       It does NOT define --mermaid-normalize differently or restate any
+       selector: this block used to be 69 selectors and 24 !important
+       declarations, and all of that was these two variables plus ink split
+       by surface. */
+    --mermaid-ink: #f0f2ff;
+    --mermaid-ink-on-shape: #111111;
+    --mermaid-shape-stroke: #c0c4e0;
+    --mermaid-shape-stroke-width: 1px;
+    --mermaid-shape-fill: #f0f2ff;
+    --mermaid-line: #f5f7ff;
+    --mermaid-edge-label-bg: #000000;
+    --mermaid-badge-ink: #f0f2ff;
+    --mermaid-label-font: 'trebuchet ms', verdana, arial, sans-serif;
+    --mermaid-label-weight: 400;
+
+    /* --- PAGE GEOMETRY --- */
+    /* Values only; the @page rule is owned by src/core/page-geometry.js.
+       The black sheet is what makes this an OLED theme, and the footer is
+       dimmed so the page number sits quietly on it. */
+    --page-margin: 2cm 2.2cm;
+    --page-background: #000000;
+    --page-footer-color: #555555;
 }
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 2cm 2.2cm;
-    background: #000000;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 9pt;
-        color: #555;
-    }
-}
-
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
-}
-
-/* --- COVER PAGE --- */
+/* --- BODY --- */
 body {
     font-family: Georgia, 'Times New Roman', Times, serif;
     font-size: 11pt;
@@ -45,74 +64,13 @@ body {
 }
 
 html,
-body,
-.content {
+body {
     background: #000000 !important;
     color: #e0e0e0;
 }
 
 * {
     box-shadow: none !important;
-}
-
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #0a0a0a;
-    color: #ffffff;
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 28pt;
-    font-weight: 700;
-    margin: 0 0 0.5em 0;
-    color: #ffffff;
-    letter-spacing: 0.5px;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 16pt;
-    font-weight: 300;
-    margin: 0 0 1.5em 0;
-    opacity: 0.85;
-}
-
-.cover .meta {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 11pt;
-    opacity: 0.7;
-    margin-top: 1em;
-    line-height: 1.8;
-}
-
-.cover .divider {
-    width: 60px;
-    height: 3px;
-    background: #00e676;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: rgba(0, 230, 118, 0.1);
-    border: 1px solid #00e676;
-    border-radius: 4px;
-    padding: 6px 16px;
-    font-size: 10pt;
-    color: #00e676;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
@@ -332,13 +290,12 @@ pre {
     white-space: nowrap;
     width: 30%;
 }
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}
-
 /* --- FORCE DARK PAGE SURFACES / REMOVE STRAY LIGHT OUTLINES --- */
+/* `.mermaid` is deliberately absent from both lists below: every Mermaid rule,
+   including the generated SVG's surface, now lives in the shared block at
+   src/core/mermaid-styles/mermaid.css, which a theme parameterises by palette
+   only. The declarations here were inert for a diagram (the SVG was already
+   transparent and the wrapper has no border), so nothing is lost. */
 p,
 section,
 article,
@@ -349,8 +306,7 @@ li,
 .math-display,
 .math-inline,
 .katex-display,
-.katex,
-.mermaid {
+.katex {
     background-color: transparent !important;
     outline-color: transparent !important;
 }
@@ -358,119 +314,6 @@ li,
 table,
 pre,
 blockquote,
-h1,
-.cover,
-.mermaid {
+h1 {
     border-color: #111 !important;
-}
-
-/* --- OLED MERMAID CONTRAST OVERRIDES --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-/* Node shapes: light fill, dark text */
-.mermaid svg rect.node,
-.mermaid svg .node rect,
-.mermaid svg .label-container rect,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect,
-.mermaid svg .default-node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .node .label-container {
-    fill: #f0f2ff !important;
-    stroke: #c0c4e0 !important;
-}
-
-.mermaid svg .path,
-.mermaid svg path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg polygon,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .labelLine,
-.mermaid svg .loopLine {
-    stroke: #f5f7ff !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: #f5f7ff !important;
-    stroke: #f5f7ff !important;
-}
-
-/* Canvas text (sequence messages, loop labels, edge labels, titles): light ink on #000 */
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .edgeLabel text,
-.mermaid svg .edgeLabel tspan,
-.mermaid svg .edgeLabel .label,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .labelText,
-.mermaid svg .sequenceNumber {
-    fill: #f0f2ff !important;
-    color: #f0f2ff !important;
-}
-
-.mermaid svg .edgeLabel rect,
-.mermaid svg .edgeLabel .background,
-.mermaid svg .labelBkg {
-    fill: #000000 !important;
-    background: #000000 !important;
-    stroke: none !important;
-}
-
-/* Labels inside light-filled shapes: dark text on #f0f2ff */
-.mermaid svg .node text,
-.mermaid svg .node tspan,
-.mermaid svg .node .label,
-.mermaid svg .node .nodeLabel,
-.mermaid svg .actor text,
-.mermaid svg .actor tspan,
-.mermaid svg .note text,
-.mermaid svg .note tspan,
-.mermaid svg .note .noteText,
-.mermaid svg .labelBox text,
-.mermaid svg .labelBox tspan,
-.mermaid svg .cluster .cluster-label text,
-.mermaid svg .cluster .cluster-label tspan {
-    fill: #111 !important;
-    color: #111 !important;
-}
-
-.mermaid svg .label foreignObject,
-.mermaid svg .nodeLabel foreignObject {
-    background: transparent !important;
-}
-
-.mermaid svg .edgeLabel foreignObject {
-    background: #000000 !important;
-}
-
-.mermaid svg rect:not(.background),
-.mermaid svg circle,
-.mermaid svg ellipse,
-.mermaid svg polygon.label-container,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: #c0c4e0 !important;
-}
-
-.mermaid svg .node .label > rect {
-    fill: transparent !important;
-    stroke: none !important;
 }

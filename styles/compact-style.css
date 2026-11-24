@@ -21,26 +21,26 @@
     --code-ink:  #08423e;
     --diagram-line: #5a6b69;
     --diagram-edge: #a9b7b5;
-}
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 1.4cm 1.5cm;
-    background: #ffffff;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 8pt;
-        color: #4a4a4a;
-    }
-}
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values. */
+    --mermaid-ink: #1a1a1a;
+    --mermaid-ink-on-shape: #1a1a1a;
+    --mermaid-shape-stroke: var(--diagram-edge);
+    --mermaid-shape-stroke-width: 1px;
+    --mermaid-line: var(--diagram-line);
+    --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mermaid-label-weight: 400;
 
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
+    /* Page geometry values only. The @page rule itself is owned by
+       src/core/page-geometry.js; a theme must never declare one.
+       The footer is small and soft here so a dense page keeps its
+       quiet margin; the values are the ones this theme declared as
+       its own @page margin box before geometry was centralised. */
+    --page-margin: 1.4cm 1.5cm;
+    --page-background: #ffffff;
+    --page-footer-font-size: 8pt;
+    --page-footer-color: #4a4a4a;
 }
 
 /* --- BODY --- */
@@ -51,63 +51,6 @@ body {
     color: var(--ink);
     background: var(--canvas);
     counter-reset: h2-counter;
-}
-
-/* --- COVER PAGE --- */
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #0b2624;
-    color: #eaf3f2;
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-size: 26pt;
-    font-weight: 700;
-    margin: 0 0 0.4em 0;
-    color: #ffffff;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-size: 14pt;
-    font-weight: 400;
-    margin: 0 0 1.2em 0;
-    opacity: 0.9;
-}
-
-.cover .meta {
-    font-size: 10pt;
-    opacity: 0.85;
-    margin-top: 0.8em;
-    line-height: 1.7;
-}
-
-.cover .divider {
-    width: 60px;
-    height: 3px;
-    background: #4db6ac;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: rgba(77, 182, 172, 0.18);
-    border: 1px solid #4db6ac;
-    border-radius: 3px;
-    padding: 5px 14px;
-    font-size: 9pt;
-    color: #8fd6cf;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
@@ -326,58 +269,4 @@ pre {
     color: var(--accent-deep);
     white-space: nowrap;
     width: 28%;
-}
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}
-
-/* --- MERMAID (theme-controlled, fills left to the author) --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-.mermaid svg .node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: var(--diagram-edge) !important;
-    stroke-width: 1px;
-}
-
-.mermaid svg .path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .loopLine {
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: var(--diagram-line) !important;
-    stroke: var(--diagram-line) !important;
-}
-
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .noteText {
-    fill: var(--ink) !important;
-    color: var(--ink) !important;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

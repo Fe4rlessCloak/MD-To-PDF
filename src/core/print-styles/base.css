@@ -1,0 +1,25 @@
+/*
+ * Base print stylesheet — the safe defaults every document starts from.
+ *
+ * Assembly emits this first, so any user CSS or theme rule that sets the same
+ * property wins. Nothing here may be load-bearing for containment: those rules
+ * live in `mermaid-containment.css`, which is emitted after user CSS precisely
+ * so user CSS cannot override them.
+ *
+ * Deliberately declares no `@page` rule. Page geometry — size, margin, sheet
+ * background, the printed page number and the browser's print preference — is
+ * owned by `src/core/page-geometry.js`, which emits the rule once. A fallback
+ * rule here would be a second declaration of the same thing, which is exactly
+ * the fault that module exists to remove.
+ */
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: Georgia, 'Times New Roman', Times, serif;
+  font-size: 11pt;
+  line-height: 1.6;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}

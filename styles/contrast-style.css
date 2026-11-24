@@ -18,27 +18,27 @@
     --accent:    #00308f;
     --rule:      #000000;
     --code-bg:   #f0f0f0;
-}
 
-/* --- PAGE SETUP --- */
-@page {
-    size: A4;
-    margin: 2.2cm 2.2cm;
-    background: #ffffff;
-    @bottom-center {
-        content: "Page " counter(page);
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 10pt;
-        font-weight: 600;
-        color: #000000;
-    }
-}
+    /* Mermaid styling palette — read by src/core/mermaid-styles/mermaid.css.
+       The selector list lives there; this theme supplies only these values.
+       Maximum contrast: black ink, black outlines, and a heavier rule weight
+       than the other themes. */
+    --mermaid-ink: #000000;
+    --mermaid-ink-on-shape: #000000;
+    --mermaid-shape-stroke: var(--rule);
+    --mermaid-shape-stroke-width: 2px;
+    --mermaid-line: var(--rule);
+    --mermaid-label-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mermaid-label-weight: 600;
 
-@page cover {
-    margin: 0;
-    @bottom-center {
-        content: none;
-    }
+    /* Page geometry values only; the @page rule is owned by
+       src/core/page-geometry.js. This theme's page number is heavier and
+       black to meet its maximum-contrast brief. */
+    --page-margin: 2.2cm 2.2cm;
+    --page-background: #ffffff;
+    --page-footer-font-size: 10pt;
+    --page-footer-font-weight: 600;
+    --page-footer-color: #000000;
 }
 
 /* --- BODY --- */
@@ -49,65 +49,6 @@ body {
     color: var(--ink);
     background: var(--canvas);
     counter-reset: h2-counter;
-}
-
-/* --- COVER PAGE --- */
-.cover {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    page: cover;
-    text-align: center;
-    background: #000000;
-    color: #ffffff;
-    padding: 3cm;
-    box-sizing: border-box;
-}
-
-.cover h1 {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 3rem;
-    font-weight: 700;
-    margin: 0 0 0.5em 0;
-    color: #ffffff;
-    border: none;
-    padding: 0;
-}
-
-.cover .subtitle {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 1.5rem;
-    font-weight: 400;
-    margin: 0 0 1.5em 0;
-}
-
-.cover .meta {
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-size: 1rem;
-    margin-top: 1em;
-    line-height: 1.9;
-}
-
-.cover .divider {
-    width: 120px;
-    height: 4px;
-    background: #ffffff;
-    margin: 1em auto;
-    border: none;
-}
-
-.cover .badge {
-    display: inline-block;
-    background: #000000;
-    border: 2px solid #ffffff;
-    border-radius: 3px;
-    padding: 8px 18px;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #ffffff;
-    margin-top: 1em;
 }
 
 /* --- GENERAL TYPOGRAPHY --- */
@@ -343,59 +284,4 @@ pre {
     color: var(--ink);
     white-space: nowrap;
     width: 30%;
-}
-
-/* --- COVER HIDE ON INNER PAGES --- */
-.content {
-    break-before: page;
-}
-
-/* --- MERMAID (maximum-contrast ink and strokes) --- */
-.mermaid svg {
-    background: transparent !important;
-}
-
-.mermaid svg .node rect,
-.mermaid svg .node circle,
-.mermaid svg .node ellipse,
-.mermaid svg .node polygon,
-.mermaid svg .node path,
-.mermaid svg .actor,
-.mermaid svg .note,
-.mermaid svg .labelBox,
-.mermaid svg .cluster rect {
-    stroke: var(--rule) !important;
-    stroke-width: 2px;
-}
-
-.mermaid svg .path,
-.mermaid svg line,
-.mermaid svg polyline,
-.mermaid svg .flowchart-link,
-.mermaid svg .messageLine0,
-.mermaid svg .messageLine1,
-.mermaid svg .actor-line,
-.mermaid svg .loopLine {
-    stroke: var(--rule) !important;
-}
-
-.mermaid svg marker path,
-.mermaid svg .marker,
-.mermaid svg .arrowheadPath {
-    fill: var(--rule) !important;
-    stroke: var(--rule) !important;
-}
-
-.mermaid svg text,
-.mermaid svg tspan,
-.mermaid svg .label,
-.mermaid svg .edgeLabel,
-.mermaid svg .nodeLabel,
-.mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .noteText {
-    fill: var(--ink) !important;
-    color: var(--ink) !important;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    font-weight: 600;
 }
