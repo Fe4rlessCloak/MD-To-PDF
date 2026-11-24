@@ -30,7 +30,7 @@ import {
   redeclaredSelectors,
   stripComments,
 } from '../src/core/mermaid-styles/mermaid-styles.js';
-import { NORMALIZE_VARIABLE, THEME_VARIABLE, BOOTSTRAP_VARIABLES } from '../src/core/mermaid-bootstrap.js';
+import { NORMALIZE_VARIABLE, THEME_VARIABLE, BOOTSTRAP_VARIABLES, GANTT_VARIABLES } from '../src/core/mermaid-bootstrap.js';
 import { bundledThemes, readTheme } from './helpers/themes.js';
 
 /** The block's own text. */
@@ -361,14 +361,18 @@ test('every --mermaid-* variable read by the block or declared by a theme is in 
 });
 
 test('bootstrap-owned properties are recognised beside the block contract, and a typo still fails', async () => {
-  // Acceptance for issue #18: the contract test has to know that some
+  // Acceptance for issues #18 and #19: the contract test has to know that some
   // `--mermaid-*` names belong to the browser program rather than to the
   // shared block. Both owners are named here, so a new bootstrap-owned
-  // property is one line in the program and no edit in this test.
+  // property is one entry in the program and no edit in this test.
   assert.deepEqual(
     [...bootstrapOwned].sort(),
-    [NORMALIZE_VARIABLE, THEME_VARIABLE].sort(),
-    'the bootstrap owns the normalisation opt-in and the theme selection, and nothing else',
+    [
+      NORMALIZE_VARIABLE,
+      THEME_VARIABLE,
+      ...GANTT_VARIABLES.map((variable) => variable.name),
+    ].sort(),
+    'the bootstrap owns the normalisation opt-in, the theme selection and the Gantt bar fills',
   );
 
   // Recognition must not become a blanket exemption: a misspelling of the
@@ -376,6 +380,15 @@ test('bootstrap-owned properties are recognised beside the block contract, and a
   const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
   const typo = `${THEME_VARIABLE}-drak`;
   assert.ok(!known.has(typo) && !bootstrapOwned.has(typo), `${typo} must not be recognised`);
+
+  // A misspelling of a Gantt variable must fail the same way; the bar-fill
+  // names are the newest members of the set, so they are the ones a typo is
+  // most likely to land on.
+  const ganttTypo = `${GANTT_VARIABLES[1].name}-drak`;
+  assert.ok(
+    !bootstrapOwned.has(ganttTypo),
+    `${ganttTypo} must not be recognised; the bridge maps exact names`,
+  );
 
   const typoDeclarations = [...stripComments(`:root { ${typo}: dark; }`).matchAll(/(--mermaid-[\w-]+)\s*:/g)]
     .map((match) => match[1])

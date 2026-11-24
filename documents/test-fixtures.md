@@ -165,3 +165,77 @@ pie showData
     "PDF export" : 15
 ```
 
+## 9. Gantt Label Surfaces
+
+A Gantt task's name is drawn by Mermaid in one of two places, and the two are different surfaces: a task short enough to hold its name gets the label *inside* its bar, painted on the bar's own fill, while a task whose name would not fit gets it *outside*, drawn on the page. A theme that inks labels by guessing rather than measuring gets one of the two wrong, so this chart declares a short completed task and a long in-progress one whose name overflows to the left of its bar. The in-progress bar is the one Mermaid inks with its own `!important` overflow rule, which is the ink that has to be replaceable.
+
+```mermaid
+gantt
+    title Label Surface Probe
+    dateFormat YYYY-MM-DD
+    axisFormat %b %d
+    section Bars
+    Short done               :done, short1, 2026-03-02, 2d
+    A long task name that has to overflow outside its own bar :active, long1, after short1, 1d
+    Another label drawn outside a plain task bar :plain1, after long1, 2d
+    Tiny                     :tiny1, after plain1, 1d
+```
+
+## 10. Class Diagram Label Container
+
+A class diagram draws each class as a `<path>` and writes its name and members into a text container that is a group, not a shape. The group inherits a fill from its ancestors, so a normaliser that samples the nearest element carrying a fill samples the group and reads a dark surface that was never painted — then forces white ink onto a light box. The class names here must keep dark ink on their own light boxes.
+
+```mermaid
+classDiagram
+    class Document {
+        +String title
+        +render() PDF
+    }
+    class Theme {
+        +palette()
+    }
+    Document --> Theme : uses
+```
+
+## 11. Composite State Diagram
+
+A composite state nests one cluster inside another, and Mermaid paints that nesting as two rectangles: an `outer` band and an `inner` surface on top of it. The state's name sits on the inner one, so the surface behind a state label is the composite of both — and the ink has to be decided against what is actually visible, not against whichever rectangle came first in document order.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Active
+    state Active {
+        [*] --> Working
+        state Working {
+            [*] --> Busy
+            Busy --> [*]
+        }
+        Working --> Paused : wait
+        Paused --> Working : resume
+    }
+    Active --> [*]
+```
+
+## 12. Author-Supplied Node Fills
+
+These two nodes carry an author `style` directive rather than a theme colour. Mermaid compiles each into an inline fill on the shape, so the surface behind the label is the author's, not the theme's — and the theme's ink is right for one of them and wrong for the other. The dark fill must take light ink and the light fill dark ink, on the same page, in the same diagram.
+
+```mermaid
+flowchart TD
+    A[Dark author fill] --> B[Light author fill]
+    B --> C[Default fill]
+    style A fill:#1b2130,color:#ffffff
+    style B fill:#f5f5f5,color:#111111
+```
+
+## 13. Multi-Line Edge Labels
+
+An edge label can carry more than one line, and Mermaid draws each line as its own span inside one text element. A label that crosses an edge also sits on the edge-label plate, so its surface is the plate rather than the page. Every line must keep a legible ink, including the lines that are not the first.
+
+```mermaid
+flowchart LR
+    A[Source] -->|first line<br/>second line| B[Sink]
+    B -->|a much longer edge label<br/>that wraps onto two lines<br/>and a third| C[End]
+```
+
