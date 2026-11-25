@@ -65,22 +65,6 @@ export const MERMAID_CDN_URL =
 export const NORMALIZE_VARIABLE = '--mermaid-normalize';
 
 /**
- * CSS custom property that carries the page sheet colour.
- *
- * Read, not owned: `src/core/page-geometry.js` owns this name and writes it
- * into the `@page` rule, which is what actually paints the sheet. This program
- * reads it because the surface under a label is the sheet composited with the
- * element backgrounds, and the sheet is the property that owns the paint — a
- * `html`/`body` background is a second, optional thing (`style.css` sets
- * neither). The name cannot be imported here because this file's source text is
- * inlined as browser code, so the agreement is pinned by a test instead of by
- * the language.
- *
- * @type {string}
- */
-export const PAGE_BACKGROUND_VARIABLE = '--page-background';
-
-/**
  * CSS custom property a theme defines to select Mermaid's built-in theme.
  *
  * Same cross-language contract as {@link NORMALIZE_VARIABLE}, and the same
@@ -156,9 +140,9 @@ export const GANTT_VARIABLES = Object.freeze([
  *
  * Only `--mermaid-*` names belong here: this list is what tells a
  * program-owned property from a shared-block one inside that prefix.
- * {@link PAGE_BACKGROUND_VARIABLE} is read too, but it is a page-geometry
- * property rather than a Mermaid one, so it stays out and its agreement is
- * pinned separately.
+ * The page-background variable name is owned by `page-geometry.js` and
+ * handed in by `build-html.js` at assembly time, so it stays out of this
+ * list.
  *
  * A frozen array rather than a `Set`, for the same reason
  * `MERMAID_VARIABLES` is one: `Object.freeze` does not stop `Set.add`, so a
@@ -596,22 +580,32 @@ function shapeContains(shape, x, y) {
  * and `body` may all be transparent, and something has to be behind them.
  *
  * **The sheet colour belongs to `@page`.** A theme paints the page through
- * `--page-background`, which `page-geometry.js` writes into the `@page` rule;
- * `html` and `body` backgrounds are a second, narrower thing that a stylesheet
- * may leave unset entirely (`style.css` sets neither). So the resolved sheet
- * variable is the first thing composited and the only authoritative source;
- * the `html`/`body` chain is the fallback for a document that sets no page
- * background at all. Reading only the element chain would sample a property
- * that does not own the sheet and coincide with the truth by luck.
+ * the page-background variable owned by `page-geometry.js` and written into
+ * the `@page` rule; `html` and `body` backgrounds are a second, narrower thing
+ * that a stylesheet may leave unset entirely (`style.css` sets neither). So
+ * the sheet variable read from `rootStyle` is the first thing composited and
+ * the only authoritative source; the `html`/`body` chain is the fallback for a
+ * document that sets no page background at all.
  *
  * @param {CSSStyleDeclaration} rootStyle
  * @param {CSSStyleDeclaration} [bodyStyle]
- * @param {string} [sheet]  Resolved `--page-background` value, or empty when unset.
+ * @param {Object} [options]
+ * @param {string} [options.pageBackgroundVariable]  CSS custom property name for the sheet background.
+ * @param {(value: string) => string} [options.resolveColor]  Optional browser colour resolver for non-hex/rgb values.
  * @returns {{r: number, g: number, b: number, a: number}}
  */
-export function canvasColor(rootStyle, bodyStyle, sheet = '') {
+export function canvasColor(
+  rootStyle,
+  bodyStyle,
+  { pageBackgroundVariable = '', resolveColor } = {},
+) {
   const paper = { r: 255, g: 255, b: 255, a: 1 };
-  const sheetColor = parseColor(sheet);
+  const rawSheet =
+    pageBackgroundVariable && typeof rootStyle?.getPropertyValue === 'function'
+      ? rootVariableValue(rootStyle, pageBackgroundVariable)
+      : '';
+  const resolvedSheet = typeof resolveColor === 'function' ? resolveColor(rawSheet) : rawSheet;
+  const sheetColor = parseColor(resolvedSheet);
   const base = sheetColor ? compositeOver(sheetColor, paper) : paper;
   const root = parseColor(rootStyle?.backgroundColor) ?? { r: 0, g: 0, b: 0, a: 0 };
   const body = parseColor(bodyStyle?.backgroundColor) ?? { r: 0, g: 0, b: 0, a: 0 };
@@ -758,14 +752,113 @@ function pointInFill(el, origin) {
 }
 
 /**
- * Collect the painted geometry of one rendered diagram as plain records.
+ * Resolve any CSS colour text (including named colours or `hsl()`) to a
+ * computed `rgb()`/`rgba()` string when running in a real DOM.
  *
- * Only {@link PAINTED_SHAPE_SELECTOR} elements are read, and only those with a
- * non-transparent fill and positive opacity. Coordinates are made relative to
- * the SVG's own box, which is the same frame {@link visibleLabels} reports a
- * label's centre in — that agreement is the contract the whole normaliser
- * rests on, and it is why both halves subtract the same origin rather than
- * working in viewport coordinates.
+ * `getPropertyValue('--page-background')` returns raw CSS text rather than a
+ * resolved colour. Hex, `rgb()`/`rgba()`, and `black`/`white`/`transparent`
+ * parse directly without DOM work; anything else is probed through a hidden
+ * element so valid CSS colours resolve and invalid ones return `''`.
+ *
+ * @param {Document} doc
+ * @param {(el: Element) => CSSStyleDeclaration} computedStyle
+ * @param {string} value
+ * @returns {string}
+ */
+function resolveCssColor(doc, computedStyle, value) {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (trimmed === '') return '';
+  if (parseColor(trimmed) !== null) return trimmed;
+
+  const host = doc?.body ?? doc?.documentElement;
+  if (typeof doc?.createElement !== 'function' || typeof host?.appendChild !== 'function') {
+    return trimmed;
+  }
+
+  const probe = doc.createElement('span');
+  probe.style.display = 'none';
+  probe.style.color = '';
+  probe.style.color = trimmed;
+  if (probe.style.color === '') return '';
+
+  host.appendChild(probe);
+  try {
+    return computedStyle(probe)?.color ?? '';
+  } finally {
+    probe.remove?.();
+  }
+}
+
+/**
+ * Effective opacity of an SVG element, multiplying any ancestor group opacities
+ * up to the enclosing `<svg>` root.
+ *
+ * `opacity` is not inherited in CSS/SVG, so `<g opacity="0.2"><rect>` leaves
+ * the child's own computed `opacity` at `1` even though the paint is 20% opaque.
+ *
+ * @param {Element} el
+ * @param {Element} svg
+ * @param {(el: Element) => CSSStyleDeclaration} computedStyle
+ * @returns {number}
+ */
+function effectiveOpacity(el, svg, computedStyle) {
+  let opacity = 1;
+  let current = el;
+  while (current && current !== svg) {
+    const raw = computedStyle(current)?.opacity;
+    if (raw !== undefined && raw !== '') {
+      const numeric = Number(raw);
+      if (!Number.isNaN(numeric)) opacity *= numeric;
+    }
+    current = current.parentElement;
+  }
+  return opacity;
+}
+
+/**
+ * Whether an HTML element inside a `foreignObject` directly owns non-whitespace
+ * text nodes (not merely text inside nested child elements).
+ *
+ * Checking `children.length === 0` skips `<p>line 1<br/>line 2</p>` and
+ * inline-formatted labels because `<br/>` or `<b>` counts as a child element.
+ *
+ * @param {Element} el
+ * @returns {boolean}
+ */
+function hasDirectText(el) {
+  if (el.childNodes) {
+    return Array.from(el.childNodes).some(
+      (node) => node.nodeType === 3 && (node.textContent ?? '').trim() !== '',
+    );
+  }
+  return (el.children?.length ?? 0) === 0;
+}
+
+/**
+ * Whether `shapeEl` is painted before `labelEl` in SVG document order.
+ *
+ * Falls back to `true` when running against minimal stub elements that do not
+ * implement `compareDocumentPosition`.
+ *
+ * @param {Element} shapeEl
+ * @param {Element} labelEl
+ * @returns {boolean}
+ */
+function isPaintedBefore(shapeEl, labelEl) {
+  if (!shapeEl || !labelEl || typeof shapeEl.compareDocumentPosition !== 'function') return true;
+  // Node.DOCUMENT_POSITION_FOLLOWING === 4: labelEl comes after shapeEl.
+  return (shapeEl.compareDocumentPosition(labelEl) & 4) !== 0;
+}
+
+/**
+ * Collect the painted geometry of one rendered diagram as element + record pairs.
+ *
+ * Only {@link PAINTED_SHAPE_SELECTOR} elements are read, and only visible ones
+ * with positive effective opacity (including ancestor `<g>` groups). Coordinates
+ * are made relative to the SVG's own box, which is the same frame
+ * {@link visibleLabels} reports a label's centre in — that agreement is the
+ * contract the whole normaliser rests on, and it is why both halves subtract the
+ * same origin rather than working in viewport coordinates.
  *
  * Containment is decided per primitive: a `<rect>` keeps its box, which is
  * exact, and every other tag carries a `contains` predicate from
@@ -774,7 +867,7 @@ function pointInFill(el, origin) {
  *
  * @param {Element} svg
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
- * @returns {Array<Object>} Records for {@link paintedSurfaceAt}.
+ * @returns {Array<{el: Element, record: Object}>} Entries for {@link paintedSurfaceAt}.
  */
 function paintedShapes(svg, computedStyle) {
   const origin = svg.getBoundingClientRect();
@@ -782,8 +875,13 @@ function paintedShapes(svg, computedStyle) {
 
   for (const el of svg.querySelectorAll(PAINTED_SHAPE_SELECTOR)) {
     const style = computedStyle(el);
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') continue;
+
     const box = el.getBoundingClientRect();
     if (!(box.width > 0) || !(box.height > 0)) continue;
+
+    const opacity = effectiveOpacity(el, svg, computedStyle);
+    if (!(opacity > 0)) continue;
 
     const tag = el.tagName.toLowerCase();
     const record = {
@@ -793,7 +891,7 @@ function paintedShapes(svg, computedStyle) {
       width: box.width,
       height: box.height,
       fill: style.fill,
-      opacity: style.opacity === '' ? 1 : Number(style.opacity),
+      opacity,
       fillOpacity: style.fillOpacity === '' ? 1 : Number(style.fillOpacity),
     };
 
@@ -802,7 +900,7 @@ function paintedShapes(svg, computedStyle) {
       if (contains) record.contains = contains;
     }
 
-    shapes.push(record);
+    shapes.push({ el, record });
   }
 
   return shapes;
@@ -812,10 +910,10 @@ function paintedShapes(svg, computedStyle) {
  * Every visible text label in one rendered diagram.
  *
  * Two kinds, because Mermaid emits both: SVG `<text>` elements, whose ink is
- * the `fill` property, and leaf elements inside a `foreignObject`, whose ink
- * is `color` and which is where `htmlLabels` puts a node's words. A
- * `foreignObject` wrapper itself is skipped — it is a container, not a label —
- * and so is anything in {@link LABEL_EXCLUSIONS}.
+ * the `fill` property, and elements directly owning text inside a
+ * `foreignObject`, whose ink is `color` and which is where `htmlLabels` puts a
+ * node's words. A `foreignObject` wrapper itself is skipped — it is a
+ * container, not a label — and so is anything in {@link LABEL_EXCLUSIONS}.
  *
  * @param {Element} svg
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
@@ -829,6 +927,9 @@ function visibleLabels(svg, computedStyle) {
     if (isExcludedLabel(el.getAttribute?.('class'))) return;
     if ((el.textContent ?? '').trim() === '') return;
 
+    const style = computedStyle(el);
+    if (style.visibility === 'hidden' || style.visibility === 'collapse') return;
+
     const box = el.getBoundingClientRect();
     // A zero-size label paints nothing: Mermaid emits empty `<tspan>`s for the
     // line breaks in a multi-line label, and they would otherwise be sampled
@@ -838,7 +939,7 @@ function visibleLabels(svg, computedStyle) {
     labels.push({
       el,
       inkProperty,
-      ink: parseColor(computedStyle(el)[inkProperty]),
+      ink: parseColor(style[inkProperty]),
       box: {
         x: box.x - origin.x,
         y: box.y - origin.y,
@@ -851,10 +952,7 @@ function visibleLabels(svg, computedStyle) {
   for (const el of svg.querySelectorAll('text')) collect(el, 'fill');
 
   for (const el of svg.querySelectorAll('foreignObject *')) {
-    // Leaf only: a wrapper's `textContent` is its child's text, so sampling a
-    // wrapper would report the same words twice and ink the container instead
-    // of the glyphs.
-    if (el.children.length > 0) continue;
+    if (!hasDirectText(el)) continue;
     collect(el, 'color');
   }
 
@@ -902,18 +1000,22 @@ function applyInk(el, ink) {
  *
  * @param {Document} doc
  * @param {(el: Element) => CSSStyleDeclaration} computedStyle
- * @param {string} [sheet]  Resolved `--page-background`; see {@link canvasColor}.
+ * @param {Object} [options]
+ * @param {string} [options.pageBackgroundVariable]  CSS custom property name for the sheet background.
  * @returns {Array<{index: number, checked: number, adjusted: number}>} Per
  *   diagram, in document order: how many labels were examined and how many
  *   needed a different ink. The render loop merges these into the debug report,
  *   so a render check can see the normaliser ran and which diagram it changed
  *   most.
  */
-export function normalizeLabelColors(doc, computedStyle, sheet = '') {
+export function normalizeLabelColors(doc, computedStyle, { pageBackgroundVariable = '' } = {}) {
   const canvas = canvasColor(
     computedStyle(doc.documentElement),
     doc.body ? computedStyle(doc.body) : undefined,
-    sheet,
+    {
+      pageBackgroundVariable,
+      resolveColor: (value) => resolveCssColor(doc, computedStyle, value),
+    },
   );
 
   const counts = [];
@@ -933,10 +1035,13 @@ export function normalizeLabelColors(doc, computedStyle, sheet = '') {
     for (const label of visibleLabels(svg, computedStyle)) {
       checked += 1;
 
+      const behind = shapes
+        .filter((entry) => isPaintedBefore(entry.el, label.el))
+        .map((entry) => entry.record);
       const surface = paintedSurfaceAt(
         label.box.x + label.box.width / 2,
         label.box.y + label.box.height / 2,
-        shapes,
+        behind,
         canvas,
       );
       const ink = normalizedInk({ surface, ink: label.ink });
@@ -1032,6 +1137,7 @@ export async function loadMermaidFromCdn() {
  * @param {(target: Object, key: string, value: unknown) => unknown} [params.publish]
  *   Readiness protocol publisher; defaults to validated assignment against `flags`.
  * @param {number} params.fatalReportIndex  Index marking a runtime-load failure.
+ * @param {string} [params.pageBackgroundVariable]  CSS custom property name owning the `@page` background.
  * @param {Object} [params.win=globalThis]   Global object the flags are published on.
  * @param {Document} [params.doc]            Document to render into; defaults to `win.document`.
  * @param {() => Promise<Object>} [params.loadRuntime]  Runtime loader; defaults to the CDN import.
@@ -1044,6 +1150,7 @@ export async function runMermaidBootstrap({
   flags,
   publish,
   fatalReportIndex,
+  pageBackgroundVariable = '',
   win,
   doc,
   loadRuntime = loadMermaidFromCdn,
@@ -1110,15 +1217,15 @@ export async function runMermaidBootstrap({
       }
 
       // Opt-in, read back from the theme at render time. The sheet colour comes
-      // from the same root style, because `--page-background` is what `@page`
-      // paints the page with; see `canvasColor`.
+      // from the root style using the page-background property handed in by
+      // assembly from `page-geometry.js`; see `canvasColor`.
       const rootStyleAtRender = computedStyle(document_.documentElement);
       const reports = collectDebugReports(document_);
       if (rootVariableValue(rootStyleAtRender, NORMALIZE_VARIABLE)) {
         const counts = normalizeLabelColors(
           document_,
           computedStyle,
-          rootVariableValue(rootStyleAtRender, PAGE_BACKGROUND_VARIABLE),
+          { pageBackgroundVariable },
         );
         // Merged by index so the count lands beside the diagram it describes.
         // The counts are per rendered SVG, and a container without one was

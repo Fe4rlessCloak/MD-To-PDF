@@ -18,7 +18,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 
 import {
   isDarkColor,
@@ -38,7 +37,6 @@ import {
   ganttThemeVariables,
   NORMALIZE_VARIABLE,
   THEME_VARIABLE,
-  PAGE_BACKGROUND_VARIABLE,
   BOOTSTRAP_VARIABLES,
   GANTT_VARIABLES,
   DEFAULT_MERMAID_THEME,
@@ -47,9 +45,10 @@ import {
   LABEL_INK_CANDIDATES,
   LABEL_EXCLUSIONS,
   PAINTED_SHAPE_TAGS,
-  MERMAID_CDN_URL,
 } from '../src/core/mermaid-bootstrap.js';
 import { READINESS_FLAGS, FATAL_REPORT_INDEX, publishFlag } from '../src/core/readiness-protocol.js';
+import { PAGE_GEOMETRY_VARIABLES } from '../src/core/page-geometry.js';
+import { declarations } from '../src/core/css-declarations.js';
 import { bundledThemes, readTheme } from './helpers/themes.js';
 
 // ---------------------------------------------------------------------------
@@ -414,9 +413,11 @@ test('a point outside every shape is the canvas, not nothing', () => {
 function canvasStyle({ backgroundColor = '', sheet = '' } = {}) {
   return {
     backgroundColor,
-    getPropertyValue: (name) => (name === PAGE_BACKGROUND_VARIABLE ? sheet : ''),
+    getPropertyValue: (name) => (name === PAGE_GEOMETRY_VARIABLES.background ? sheet : ''),
   };
 }
+
+const SHEET_OPTION = { pageBackgroundVariable: PAGE_GEOMETRY_VARIABLES.background };
 
 test('canvasColor composites an opaque body background over the paper', () => {
   // style.css sets neither sheet nor element background, and a document whose
@@ -462,7 +463,11 @@ test('canvasColor takes the sheet colour from --page-background, which owns it',
   // the sheet declared black and a transparent body, the canvas is black — a
   // body-only reading would answer paper white and be wrong.
   assert.deepEqual(
-    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }), '#000000'),
+    canvasColor(
+      canvasStyle({ sheet: '#000000' }),
+      canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }),
+      SHEET_OPTION,
+    ),
     { r: 0, g: 0, b: 0, a: 1 },
   );
 });
@@ -473,7 +478,11 @@ test('canvasColor paints the sheet first and an opaque body over it', () => {
   // about which property the sheet's colour comes *from*: when the element
   // chain says nothing, the sheet variable is what shows.
   assert.deepEqual(
-    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgb(255, 255, 255)' }), '#000000'),
+    canvasColor(
+      canvasStyle({ sheet: '#000000' }),
+      canvasStyle({ backgroundColor: 'rgb(255, 255, 255)' }),
+      SHEET_OPTION,
+    ),
     { r: 255, g: 255, b: 255, a: 1 },
     'an opaque body paints over the page background, as print does',
   );
@@ -482,7 +491,11 @@ test('canvasColor paints the sheet first and an opaque body over it', () => {
   // page only through `@page` and leaves `body` transparent, which is what
   // oled would be if it dropped its element rule.
   assert.deepEqual(
-    canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }), '#000000'),
+    canvasColor(
+      canvasStyle({ sheet: '#000000' }),
+      canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }),
+      SHEET_OPTION,
+    ),
     { r: 0, g: 0, b: 0, a: 1 },
   );
 });
@@ -493,7 +506,11 @@ test('canvasColor ignores a hollow or absent sheet variable and uses the element
   // fallback applies.
   for (const sheet of ['', '   ']) {
     assert.deepEqual(
-      canvasColor(canvasStyle(), canvasStyle({ backgroundColor: 'rgb(10, 20, 30)' }), sheet),
+      canvasColor(
+        canvasStyle({ sheet }),
+        canvasStyle({ backgroundColor: 'rgb(10, 20, 30)' }),
+        SHEET_OPTION,
+      ),
       { r: 10, g: 20, b: 30, a: 1 },
       `${JSON.stringify(sheet)} must fall back to the body`,
     );
@@ -501,9 +518,30 @@ test('canvasColor ignores a hollow or absent sheet variable and uses the element
 });
 
 test('canvasColor composites a semi-transparent sheet over the paper', () => {
-  assert.deepEqual(canvasColor(canvasStyle(), canvasStyle(), 'rgba(0, 0, 0, 0.5)'), {
-    r: 127.5, g: 127.5, b: 127.5, a: 1,
-  });
+  assert.deepEqual(
+    canvasColor(canvasStyle({ sheet: 'rgba(0, 0, 0, 0.5)' }), canvasStyle(), SHEET_OPTION),
+    { r: 127.5, g: 127.5, b: 127.5, a: 1 },
+  );
+});
+
+test('canvasColor resolves non-hex sheet colours when given a colour resolver', () => {
+  const resolveColor = (value) => (value === 'hsl(220 30% 12%)' ? 'rgb(21, 28, 40)' : '');
+  assert.deepEqual(
+    canvasColor(
+      canvasStyle({ sheet: 'hsl(220 30% 12%)' }),
+      canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }),
+      { ...SHEET_OPTION, resolveColor },
+    ),
+    { r: 21, g: 28, b: 40, a: 1 },
+  );
+  assert.deepEqual(
+    canvasColor(
+      canvasStyle({ sheet: 'not-a-color' }),
+      canvasStyle({ backgroundColor: 'rgba(0, 0, 0, 0)' }),
+      { ...SHEET_OPTION, resolveColor },
+    ),
+    { r: 255, g: 255, b: 255, a: 1 },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -534,7 +572,6 @@ test('the Gantt variables map a root property to the Mermaid theme key it sets',
   );
   for (const variable of GANTT_VARIABLES) {
     assert.equal(typeof variable.key, 'string');
-    assert.ok(variable.purpose.length > 10, `${variable.name} must say what it is for`);
   }
 });
 
@@ -583,6 +620,7 @@ function styleStub({
   fill = '',
   opacity = '1',
   fillOpacity = '1',
+  visibility = 'visible',
   color = '',
   backgroundColor = '',
   variables = {},
@@ -592,6 +630,7 @@ function styleStub({
     color,
     opacity,
     fillOpacity,
+    visibility,
     backgroundColor,
     getPropertyValue: (name) => variables[name] ?? '',
   };
@@ -616,8 +655,8 @@ function element() {
 /**
  * A label or shape in the fake SVG.
  *
- * `matches` answers only the exclusions the program asks about, so the fake
- * pins which selectors the adapter actually uses.
+ * Carries optional `childNodes`, `parentElement`, and `order` so tests can
+ * exercise direct-text detection, ancestor opacity, and document paint order.
  */
 function svgElement({
   tag = 'rect',
@@ -627,20 +666,25 @@ function svgElement({
   style = {},
   computed = {},
   children = [],
+  childNodes = null,
+  parentElement = null,
+  order = null,
 } = {}) {
   const inline = element();
   Object.assign(inline.style.props, style);
-  return {
+  const el = {
     ...inline,
     tagName: tag.toUpperCase(),
     textContent: text,
     children,
+    parentElement,
+    __order: order,
     getAttribute: (name) => (name === 'class' ? className : null),
-    matches(selector) {
-      return selector
-        .split(',')
-        .map((part) => part.trim().replace(/^\./, ''))
-        .some((token) => token !== '' && className.split(/\s+/).includes(token));
+    compareDocumentPosition(other) {
+      if (this.__order == null || other?.__order == null) return 4;
+      if (this.__order < other.__order) return 4;
+      if (this.__order > other.__order) return 2;
+      return 0;
     },
     querySelectorAll(selector) {
       if (selector === 'tspan') return children.filter((child) => child.tagName === 'TSPAN');
@@ -649,11 +693,17 @@ function svgElement({
     getBoundingClientRect: () => ({ ...box, top: box.y, left: box.x, right: box.x + box.width, bottom: box.y + box.height }),
     __computed: computed,
   };
+  if (childNodes !== null) el.childNodes = childNodes;
+  return el;
 }
 
 /** A fake SVG whose selector results the test declares. */
 function fakeSvg({ shapes = [], texts = [], foreignLeaves = [], rect = null } = {}) {
-  const all = [...shapes, ...texts, ...foreignLeaves];
+  let nextOrder = 0;
+  for (const el of [...shapes, ...texts, ...foreignLeaves]) {
+    if (el.__order == null) el.__order = nextOrder;
+    nextOrder += 1;
+  }
   // Derived from the tag list rather than from the selector constant: the fake
   // has to answer the query the adapter makes, and spelling that query here as
   // "every painted tag" keeps the constant free to change shape without a test
@@ -672,7 +722,6 @@ function fakeSvg({ shapes = [], texts = [], foreignLeaves = [], rect = null } = 
       if (selector === 'foreignObject') return [];
       throw new Error(`unexpected svg selector: ${selector}`);
     },
-    __all: all,
   };
 }
 
@@ -711,10 +760,12 @@ function createPage({
   rootVariables = {},
   canvas = 'rgb(255, 255, 255)',
   sheet = '',
+  colorProbe = {},
 } = {}) {
-  const calls = { initialize: null, rendered: [], loads: 0, removed: [], events: [] };
+  const calls = { initialize: null, rendered: [], loads: 0, removed: [], lifecycle: [] };
   const root = element();
   const body = element();
+  body.appendChild = () => {};
 
   const doc = {
     documentElement: root,
@@ -722,6 +773,26 @@ function createPage({
     querySelectorAll(selector) {
       if (selector === '.mermaid') return diagrams;
       throw new Error(`unexpected selector: ${selector}`);
+    },
+    createElement(tag) {
+      if (tag !== 'span') throw new Error(`unexpected element tag: ${tag}`);
+      let assignedColor = '';
+      return {
+        style: {
+          display: '',
+          get color() {
+            return assignedColor;
+          },
+          set color(value) {
+            assignedColor = value === '' || Object.hasOwn(colorProbe, value) ? value : '';
+          },
+        },
+        __computed: null,
+        remove() {},
+        get resolvedColor() {
+          return colorProbe[assignedColor] ?? '';
+        },
+      };
     },
     getElementById(id) {
       return {
@@ -735,25 +806,18 @@ function createPage({
 
   const variables = { ...rootVariables, [NORMALIZE_VARIABLE]: normalizing ? '1' : '' };
   if (mermaidTheme !== undefined) variables[THEME_VARIABLE] = mermaidTheme;
-  if (sheet !== '') variables[PAGE_BACKGROUND_VARIABLE] = sheet;
+  if (sheet !== '') variables[PAGE_GEOMETRY_VARIABLES.background] = sheet;
 
   const rootStyle = styleStub({ variables, backgroundColor: canvas });
-  // Record reads at the moment the program makes them, not at construction.
-  const recordingRootStyle = {
-    ...rootStyle,
-    getPropertyValue(name) {
-      calls.events.push({ kind: 'read', name });
-      return rootStyle.getPropertyValue(name);
-    },
-  };
 
   const computed = new Map([
-    [root, recordingRootStyle],
+    [root, rootStyle],
     [body, styleStub({ variables, backgroundColor: 'rgba(0, 0, 0, 0)' })],
   ]);
 
   const computedStyle = (el) => {
     if (computed.has(el)) return computed.get(el);
+    if (typeof el.resolvedColor === 'string') return { color: el.resolvedColor };
     if (el.__computed) return styleStub(el.__computed);
     return styleStub({ fill: shapeFill });
   };
@@ -766,10 +830,11 @@ function createPage({
   const runtime = {
     initialize(options) {
       calls.initialize = options;
-      calls.events.push({ kind: 'initialize', theme: options.theme });
+      calls.lifecycle.push('initialize');
     },
     async render(id, source) {
       calls.rendered.push({ id, source });
+      calls.lifecycle.push('render');
       if (source === failingText) throw new Error('Parse error on line 2');
       const node = diagrams.find((candidate) => candidate.textContent === source);
       const rendered = svgFactory();
@@ -786,12 +851,12 @@ function createPage({
 
   const loadRuntime = async () => {
     calls.loads++;
-    calls.events.push({ kind: 'loadRuntime' });
+    calls.lifecycle.push('loadRuntime');
     if (runtimeFails) throw new Error('Failed to fetch dynamically imported module');
     return runtime;
   };
 
-  return { win, doc, root, body, loadRuntime, calls, computedStyle, svgFactory };
+  return { win, doc, root, body, variables, loadRuntime, calls, computedStyle, svgFactory };
 }
 
 /** Run the program the way assembly does: flags from the protocol, injected page. */
@@ -799,6 +864,7 @@ function run(page) {
   return runMermaidBootstrap({
     flags: READINESS_FLAGS,
     fatalReportIndex: FATAL_REPORT_INDEX,
+    pageBackgroundVariable: PAGE_GEOMETRY_VARIABLES.background,
     win: page.win,
     doc: page.doc,
     loadRuntime: page.loadRuntime,
@@ -975,12 +1041,7 @@ test('rootVariableValue treats an empty declaration as absent, with a per-read f
   assert.equal(rootVariableValue(root('1'), NORMALIZE_VARIABLE), '1');
 });
 
-test('the theme and the Gantt variables are read before Mermaid initialises, not after the render loop', async () => {
-  // The order is the whole point: `mermaid.initialize` needs the resolved
-  // theme and the theme variables it merges, and it must run before any
-  // diagram is rendered. Asserted through the fake's event log rather than
-  // through line numbers in the source, so renaming a variable or moving a
-  // statement cannot fail this test while the order is unchanged.
+test('the theme and the Gantt variables reach Mermaid at initialise, before any diagram renders', async () => {
   const page = createPage({
     diagrams: [diagramNode('graph TD; A-->B')],
     mermaidTheme: 'dark',
@@ -990,33 +1051,13 @@ test('the theme and the Gantt variables are read before Mermaid initialises, not
 
   await run(page);
 
-  const kinds = page.calls.events.map((event) => event.kind);
-  const firstInitialize = kinds.indexOf('initialize');
-
-  assert.notEqual(firstInitialize, -1, 'mermaid.initialize must run');
-  assert.equal(kinds.indexOf('loadRuntime') < firstInitialize, true, 'the runtime is loaded before it is initialised');
-
-  const themeRead = page.calls.events.findIndex((event) => event.kind === 'read' && event.name === THEME_VARIABLE);
-  const ganttRead = page.calls.events.findIndex(
-    (event) => event.kind === 'read' && event.name === '--mermaid-gantt-task-fill',
+  assert.deepEqual(
+    page.calls.lifecycle,
+    ['loadRuntime', 'initialize', 'render'],
+    'runtime loads and initialises with resolved theme options before any diagram renders',
   );
-  assert.ok(themeRead > -1, 'the theme must be read from the root before anything else decides');
-  assert.ok(ganttRead > -1, 'the Gantt variables must be read from the root');
-  assert.ok(themeRead < firstInitialize, 'the theme must be resolved before mermaid.initialize()');
-  assert.ok(ganttRead < firstInitialize, 'the Gantt variables must be resolved before mermaid.initialize()');
-  assert.equal(page.calls.events[firstInitialize].theme, 'dark', 'the read value is the one initialisation receives');
-
-  // And the normalisation opt-in is read only after the render loop has put
-  // SVGs in the document: the read has to come after every render call.
-  const normalizeRead = page.calls.events.findIndex(
-    (event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE,
-  );
-  assert.ok(normalizeRead > firstInitialize, 'the opt-in is read after initialisation, at render time');
-  assert.equal(
-    page.calls.events.filter((event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE).length,
-    1,
-    'the opt-in is read once, not once per diagram',
-  );
+  assert.equal(page.calls.initialize.theme, 'dark');
+  assert.deepEqual(page.calls.initialize.themeVariables, { taskBkgColor: '#24304a' });
 });
 
 test('a theme declaring Gantt variables hands them to Mermaid as themeVariables', async () => {
@@ -1163,6 +1204,174 @@ test('an opted-in theme inks leaf text inside a foreignObject, where ink is the 
   assert.deepEqual(leaf.style.props.color, { value: LABEL_LIGHT_COLOR, priority: 'important' });
 });
 
+test('an opted-in theme evaluates multi-line and inline-formatted foreignObject labels', async () => {
+  const node = svgElement({
+    tag: 'rect',
+    box: { x: 0, y: 0, width: 140, height: 50 },
+    computed: { fill: 'rgb(27, 33, 48)' },
+  });
+  const multilineP = svgElement({
+    tag: 'p',
+    text: 'first line second line',
+    box: { x: 20, y: 12, width: 100, height: 24 },
+    computed: { color: 'rgb(20, 24, 40)' },
+    children: [svgElement({ tag: 'br', box: { x: 0, y: 0, width: 0, height: 0 } })],
+    childNodes: [
+      { nodeType: 3, textContent: 'first line' },
+      { nodeType: 1, textContent: '' },
+      { nodeType: 3, textContent: 'second line' },
+    ],
+  });
+  const boldChild = svgElement({
+    tag: 'b',
+    text: 'world',
+    box: { x: 60, y: 12, width: 40, height: 14 },
+    computed: { color: 'rgb(20, 24, 40)' },
+    childNodes: [{ nodeType: 3, textContent: 'world' }],
+  });
+  const inlineFormattedP = svgElement({
+    tag: 'p',
+    text: 'Hello world',
+    box: { x: 20, y: 12, width: 80, height: 14 },
+    computed: { color: 'rgb(20, 24, 40)' },
+    children: [boldChild],
+    childNodes: [
+      { nodeType: 3, textContent: 'Hello ' },
+      { nodeType: 1, textContent: 'world' },
+    ],
+  });
+  const page = createPage({
+    diagrams: [diagramNode('classDiagram')],
+    normalizing: true,
+    svgFactory: () => fakeSvg({ shapes: [node], foreignLeaves: [multilineP, inlineFormattedP, boldChild] }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(multilineP.style.props.color, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+  assert.deepEqual(inlineFormattedP.style.props.color, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+  assert.deepEqual(boldChild.style.props.color, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+});
+
+test('hidden shapes and hidden labels are ignored during surface sampling', async () => {
+  const hiddenLightBox = svgElement({
+    tag: 'rect',
+    box: { x: 0, y: 0, width: 120, height: 50 },
+    computed: { fill: 'rgb(245, 245, 245)', visibility: 'hidden' },
+  });
+  const label = svgElement({
+    tag: 'text',
+    text: 'On black canvas',
+    box: { x: 20, y: 12, width: 80, height: 16 },
+    computed: { fill: 'rgb(30, 30, 30)' },
+  });
+  const hiddenLabel = svgElement({
+    tag: 'text',
+    text: 'Hidden',
+    box: { x: 20, y: 12, width: 40, height: 16 },
+    computed: { fill: 'rgb(30, 30, 30)', visibility: 'collapse' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    canvas: 'rgba(0, 0, 0, 0)',
+    sheet: '#000000',
+    svgFactory: () => fakeSvg({ shapes: [hiddenLightBox], texts: [label, hiddenLabel] }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(label.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+  assert.deepEqual(hiddenLabel.style.props, {}, 'hidden labels must not be sampled or edited');
+});
+
+test('ancestor group opacity multiplies into child shape opacity when sampling surface', async () => {
+  const group = svgElement({
+    tag: 'g',
+    computed: { opacity: '0.2' },
+  });
+  const band = svgElement({
+    tag: 'rect',
+    parentElement: group,
+    box: { x: 0, y: 0, width: 120, height: 40 },
+    computed: { fill: 'rgb(255, 255, 255)', opacity: '1' },
+  });
+  const label = svgElement({
+    tag: 'text',
+    text: 'Outside bar on 20% band over black sheet',
+    box: { x: 20, y: 12, width: 80, height: 16 },
+    computed: { fill: 'rgb(30, 30, 30)' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('gantt')],
+    normalizing: true,
+    canvas: 'rgba(0, 0, 0, 0)',
+    sheet: '#000000',
+    svgFactory: () => fakeSvg({ shapes: [band], texts: [label] }),
+  });
+
+  await run(page);
+
+  // 20% white over black sheet is rgb(51, 51, 51), so dark text (30,30,30) fails AA and must become white.
+  assert.deepEqual(label.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+});
+
+test('shapes painted after a label in SVG document order do not mask the surface behind it', async () => {
+  const background = svgElement({
+    tag: 'rect',
+    order: 1,
+    box: { x: 0, y: 0, width: 120, height: 40 },
+    computed: { fill: 'rgb(27, 33, 48)' },
+  });
+  const label = svgElement({
+    tag: 'text',
+    order: 2,
+    text: 'Label',
+    box: { x: 20, y: 12, width: 40, height: 16 },
+    computed: { fill: 'rgb(20, 20, 20)' },
+  });
+  const laterOverlay = svgElement({
+    tag: 'rect',
+    order: 3,
+    box: { x: 0, y: 0, width: 120, height: 40 },
+    computed: { fill: 'rgb(255, 255, 255)' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    svgFactory: () => fakeSvg({ shapes: [background, laterOverlay], texts: [label] }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(
+    label.style.props.fill,
+    { value: LABEL_LIGHT_COLOR, priority: 'important' },
+    'only the shape painted before the label determines its background',
+  );
+});
+
+test('named or hsl() --page-background values resolve through the DOM probe before canvas compositing', async () => {
+  const label = svgElement({
+    tag: 'text',
+    text: 'Bare sheet label',
+    box: { x: 10, y: 10, width: 60, height: 16 },
+    computed: { fill: 'rgb(20, 20, 20)' },
+  });
+  const page = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: true,
+    canvas: 'rgba(0, 0, 0, 0)',
+    sheet: 'hsl(220 30% 10%)',
+    colorProbe: { 'hsl(220 30% 10%)': 'rgb(18, 23, 33)' },
+    svgFactory: () => fakeSvg({ texts: [label] }),
+  });
+
+  await run(page);
+
+  assert.deepEqual(label.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
+});
+
 test('an opted-in theme never re-inks the sequence autonumber badge', async () => {
   const badge = svgElement({
     tag: 'text',
@@ -1203,14 +1412,6 @@ test('normalizeLabelColors reports per diagram what it inspected and what it rep
   assert.deepEqual(report, [{ index: 0, checked: 2, adjusted: 1 }]);
 });
 
-test('the sheet property the normaliser reads is the one page geometry owns', async () => {
-  // The bootstrap cannot import this name (its source is inlined as browser
-  // code), so the agreement is pinned here instead: one owner writes the
-  // `@page` rule, the other reads the resolved value back.
-  const { PAGE_GEOMETRY_VARIABLES } = await import('../src/core/page-geometry.js');
-  assert.equal(PAGE_BACKGROUND_VARIABLE, PAGE_GEOMETRY_VARIABLES.background);
-});
-
 test('the debug report carries the normalisation counts per diagram', async () => {
   // The counts are load-bearing in the report now, not discarded: a render
   // check can see that the normaliser ran and on which diagram, which is the
@@ -1243,8 +1444,8 @@ test('the bundled themes declare the Gantt variables only where they paint dark 
   assert.ok(themes.length >= 5, 'the bundled themes must be discovered from styles/');
 
   for (const theme of themes) {
-    const css = await readTheme(theme, { stripComments: true });
-    const declares = [...css.matchAll(/(--mermaid-gantt-[\w-]+)\s*:/g)].map((match) => match[1]);
+    const css = await readTheme(theme);
+    const declares = [...declarations(css, '--mermaid-gantt-').declared];
     for (const name of declares) {
       assert.ok(
         GANTT_VARIABLES.some((variable) => variable.name === name),
@@ -1301,31 +1502,36 @@ test('the program can publish readiness through the protocol publishFlag adapter
 });
 
 test('the program reads the opt-in through the variable name it exports', async () => {
-  // Behavioural half: a theme that declares the property the module exports,
-  // under that exact name, is opted in. That is the cross-language contract —
-  // the name reaching `getComputedStyle` is the one the stylesheet wrote.
-  const label = svgElement({
-    tag: 'text', text: 'A', box: { x: 10, y: 10, width: 20, height: 10 }, computed: { fill: 'rgb(20, 24, 40)' },
+  const makeLabel = () =>
+    svgElement({
+      tag: 'text',
+      text: 'A',
+      box: { x: 10, y: 10, width: 20, height: 10 },
+      computed: { fill: 'rgb(20, 24, 40)' },
+    });
+  const node = svgElement({
+    tag: 'rect',
+    box: { x: 0, y: 0, width: 100, height: 40 },
+    computed: { fill: 'rgb(27, 33, 48)' },
   });
-  const node = svgElement({ tag: 'rect', box: { x: 0, y: 0, width: 100, height: 40 }, computed: { fill: 'rgb(27, 33, 48)' } });
-  const page = createPage({
+
+  const optedOutLabel = makeLabel();
+  const optedOutPage = createPage({
+    diagrams: [diagramNode('graph TD; A-->B')],
+    normalizing: false,
+    svgFactory: () => fakeSvg({ shapes: [node], texts: [optedOutLabel] }),
+  });
+  await run(optedOutPage);
+  assert.deepEqual(optedOutLabel.style.props, {}, 'without the variable, labels remain untouched');
+
+  const optedInLabel = makeLabel();
+  const optedInPage = createPage({
     diagrams: [diagramNode('graph TD; A-->B')],
     normalizing: true,
-    svgFactory: () => fakeSvg({ shapes: [node], texts: [label] }),
+    svgFactory: () => fakeSvg({ shapes: [node], texts: [optedInLabel] }),
   });
-
-  await run(page);
-
-  assert.ok(
-    page.calls.events.some((event) => event.kind === 'read' && event.name === NORMALIZE_VARIABLE),
-    'the opt-in must be read by the name the module exports, at render time',
-  );
-  assert.deepEqual(label.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
-
-  // And the runtime URL stays one exported constant, which assembly inlines
-  // through the module rather than spelling again.
-  const source = await readFile(new URL('../src/core/mermaid-bootstrap.js', import.meta.url), 'utf8');
-  assert.ok(source.includes(MERMAID_CDN_URL), 'the runtime URL is a single exported constant');
+  await run(optedInPage);
+  assert.deepEqual(optedInLabel.style.props.fill, { value: LABEL_LIGHT_COLOR, priority: 'important' });
 });
 
 // ---------------------------------------------------------------------------

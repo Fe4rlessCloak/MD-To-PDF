@@ -81,8 +81,7 @@
 .mermaid svg .label,
 .mermaid svg .edgeLabel,
 .mermaid svg .messageText,
-.mermaid svg .loopText,
-.mermaid svg .labelText {
+.mermaid svg .loopText {
   fill: var(--mermaid-ink) !important;
   color: var(--mermaid-ink) !important;
 }

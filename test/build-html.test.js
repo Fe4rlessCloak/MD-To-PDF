@@ -5,7 +5,7 @@ import { buildHtml, mermaidBootstrapSource, katexBootstrapSource, neutralizeClos
 import { readinessFlagsSource } from '../src/core/readiness-protocol.js';
 import { printStylesheetSource } from '../src/core/print-styles/print-styles.js';
 import { mermaidStylesheetSource } from '../src/core/mermaid-styles/mermaid-styles.js';
-import { pageGeometry } from '../src/core/page-geometry.js';
+import { pageGeometry, PAGE_GEOMETRY_VARIABLES } from '../src/core/page-geometry.js';
 import { MERMAID_CDN_URL, NORMALIZE_VARIABLE, isDarkColor } from '../src/core/mermaid-bootstrap.js';
 import { KATEX_STYLESHEET_URL } from '../src/core/katex-bootstrap.js';
 import { createDocumentOptions } from '../src/core/document-options.js';
@@ -177,18 +177,24 @@ test('assembly emits exactly one page rule', () => {
 });
 
 test('the two bootstrap scripts share one template, so they cannot drift apart', () => {
-  // Both programs are inlined by the same ten-line adapter with the entry-point
-  // name as the only difference. Assert the shape, not the code: each call site
-  // appears exactly once, wired to the protocol and the fatal sentinel.
+  // Both programs are inlined by the same adapter with the entry-point
+  // name (and page-background owner for Mermaid) as the only differences.
+  // Assert the shape, not the code: each call site appears exactly once, wired
+  // to the protocol and the fatal sentinel, and Mermaid receives the sheet
+  // variable owned by page-geometry.js.
   const html = withOptions();
+  const escapedBg = PAGE_GEOMETRY_VARIABLES.background.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  for (const entry of ['runMermaidBootstrap', 'runKatexBootstrap']) {
-    assert.equal(
-      (html.match(new RegExp(`await ${entry}\\(\\{ flags: RF, publish: publishFlag, fatalReportIndex: -1 \\}\\);`, 'g')) ?? []).length,
-      1,
-      `${entry} must be called exactly once, with the protocol and fatal sentinel`,
-    );
-  }
+  assert.equal(
+    (html.match(new RegExp(`await runMermaidBootstrap\\(\\{ flags: RF, publish: publishFlag, fatalReportIndex: -1, pageBackgroundVariable: "${escapedBg}" \\}\\);`, 'g')) ?? []).length,
+    1,
+    'runMermaidBootstrap must be called exactly once with the protocol, fatal sentinel, and page-geometry background variable',
+  );
+  assert.equal(
+    (html.match(/await runKatexBootstrap\(\{ flags: RF, publish: publishFlag, fatalReportIndex: -1 \}\);/g) ?? []).length,
+    1,
+    'runKatexBootstrap must be called exactly once, with the protocol and fatal sentinel',
+  );
   // The protocol declaration is inlined into each module script, once per
   // bootstrap, because each is a module with its own bindings.
   assert.equal(
@@ -347,11 +353,8 @@ test('oled supplies a palette and leaves the Mermaid selectors to the shared blo
   // a dark theme — the fill they sit on is — so both are checked with the
   // luminance rule the browser program already owns rather than with a second
   // copy of the arithmetic here.
-  const hex = (name) => /^#([0-9a-f]{6})$/i.exec(name)[1];
-  const asRgb = (value) =>
-    `rgb(${Number.parseInt(value.slice(0, 2), 16)}, ${Number.parseInt(value.slice(2, 4), 16)}, ${Number.parseInt(value.slice(4, 6), 16)})`;
   for (const name of ['--mermaid-ink', '--mermaid-ink-on-shape']) {
-    const value = hex(new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(oled)[1]);
-    assert.equal(isDarkColor(asRgb(value)), false, `${name} must stay light: the sheet and the fill are dark`);
+    const value = new RegExp(`${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(oled)[1];
+    assert.equal(isDarkColor(value), false, `${name} must stay light: the sheet and the fill are dark`);
   }
 });

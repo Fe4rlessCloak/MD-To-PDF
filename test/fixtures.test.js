@@ -39,11 +39,7 @@ function readFixture(name) {
  * @returns {number}
  */
 function countFences(markdown, language) {
-  const pattern = new RegExp(
-    `^ {0,3}\`{3,}[ \\t]*${language}[ \\t]*$`,
-    'gm',
-  );
-  return (markdown.match(pattern) || []).length;
+  return fenceBodies(markdown, language).length;
 }
 
 /**

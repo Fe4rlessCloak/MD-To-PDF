@@ -48,17 +48,6 @@ const block = () => mermaidStylesheetSource();
 const bootstrapOwned = new Set(BOOTSTRAP_VARIABLES);
 
 /**
- * The rules of the shared block, from the module that owns the split.
- *
- * `ruleList` answers "which declaration sits under which selector", which is
- * what `selectorList` cannot: a rule that paints a shape and a rule that inks a
- * label can name the same element family, and telling them apart is exactly
- * what the sequence-diagram fixes depend on. This used to be a second copy of
- * that parse living in this file; it is now the module's own.
- */
-const rules = (css) => ruleList(css);
-
-/**
  * The body of the `@container style(<variable>)` block, brace-matched.
  *
  * A property asserted inside an opt-in container is inert for every theme that
@@ -410,7 +399,7 @@ test('actor fill and stroke rules target actor shape geometry, never actor text'
   // the shape's fill — the dark theme's near-white — and the label vanishes
   // into its own box. The rules at fault are the ones declaring the shape-paint
   // variables, not the ink rules, which name `text.actor` on purpose.
-  const paintRules = rules(block()).filter((rule) =>
+  const paintRules = ruleList(block()).filter((rule) =>
     /(fill|stroke)\s*:\s*var\(--mermaid-shape-(fill|stroke)\)/.test(rule.body),
   );
   assert.ok(paintRules.length > 0, 'the block must still paint actor shapes');
@@ -448,7 +437,7 @@ test('actor fill and stroke rules target actor shape geometry, never actor text'
   // And the label must still have ink of its own, or the fix is a different
   // disappearance: Mermaid puts text.actor beside rect.actor as a sibling, so
   // no descendant form can reach it.
-  const actorInk = rules(block()).find(
+  const actorInk = ruleList(block()).find(
     (rule) =>
       rule.selectors.includes('.mermaid svg text.actor') &&
       /fill:\s*var\(--mermaid-ink-on-shape\)\s*!important/.test(rule.body),
@@ -468,7 +457,7 @@ test('a sequence note’s text, including nested spans, takes the on-shape ink',
   // state the element type, and state the nested span, or the inner text falls
   // back to the canvas ink.
   for (const expected of ['.mermaid svg text.noteText', '.mermaid svg text.noteText tspan']) {
-    const noteRule = rules(block()).find((rule) => rule.selectors.includes(expected));
+    const noteRule = ruleList(block()).find((rule) => rule.selectors.includes(expected));
 
     assert.ok(noteRule, `${expected} must carry the on-shape ink for note text`);
     assert.match(
@@ -485,7 +474,7 @@ test('a sequence note’s text, including nested spans, takes the on-shape ink',
 
   // The canvas-ink list must not have quietly acquired .noteText back: an
   // unconditional `text` match plus a later weaker .noteText is the bug.
-  const canvasInk = rules(block()).find((rule) =>
+  const canvasInk = ruleList(block()).find((rule) =>
     /fill:\s*var\(--mermaid-ink\)\s*!important/.test(rule.body),
   );
   assert.ok(canvasInk, 'the canvas-ink rule must exist');
@@ -502,7 +491,7 @@ test('the loop box label text takes the on-shape ink, and the loop condition doe
   // disappears. `.loopText` — the condition drawn on the loop rectangle's
   // transparent interior — must stay on the canvas ink, or it turns dark on a
   // black page.
-  const onShapeLoop = rules(block()).find(
+  const onShapeLoop = ruleList(block()).find(
     (rule) =>
       rule.selectors.includes('.mermaid svg text.labelText') &&
       /fill:\s*var\(--mermaid-ink-on-shape\)\s*!important/.test(rule.body),
@@ -519,7 +508,7 @@ test('the loop box label text takes the on-shape ink, and the loop condition doe
   );
 
   // The condition must not be dragged onto the shape ink.
-  for (const rule of rules(block())) {
+  for (const rule of ruleList(block())) {
     if (!/fill:\s*var\(--mermaid-ink-on-shape\)/.test(rule.body)) continue;
     assert.ok(
       !rule.selectors.some((selector) => /\.loopText(?![-a-z])/.test(selector)),
@@ -527,14 +516,18 @@ test('the loop box label text takes the on-shape ink, and the loop condition doe
     );
   }
 
-  // And it must still be in the canvas-ink list.
-  const canvasInk = rules(block()).find((rule) =>
+  // And it must still be in the canvas-ink list, while .labelText must not.
+  const canvasInk = ruleList(block()).find((rule) =>
     /fill:\s*var\(--mermaid-ink\)\s*!important/.test(rule.body),
   );
   assert.ok(canvasInk, 'the canvas-ink rule must exist');
   assert.ok(
     canvasInk.selectors.some((selector) => /\.loopText(?![-a-z])/.test(selector)),
     'the loop condition sits on the page surface and needs the canvas ink',
+  );
+  assert.ok(
+    !canvasInk.selectors.some((selector) => /\.labelText(?![-a-z])/.test(selector)),
+    'loop tab text sits on a filled labelBox and must not be in the canvas-ink list',
   );
 });
 
@@ -550,12 +543,12 @@ test('the edge-label plate rule declares opacity: 1 inside the edge-label-bg con
   // Mermaid's translucent chip.
   const body = containerBody('--mermaid-edge-label-bg');
 
-  const plateRules = [...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((match) =>
-    /\.edgeLabel/.test(match[1]),
+  const plateRules = ruleList(body).filter((rule) =>
+    rule.selectors.some((selector) => /\.edgeLabel/.test(selector)),
   );
   assert.ok(plateRules.length > 0, 'the edge-label-bg container must style .edgeLabel');
 
-  const opaque = plateRules.filter((match) => /opacity:\s*1\s*!important/.test(match[2]));
+  const opaque = plateRules.filter((rule) => /opacity:\s*1\s*!important/.test(rule.body));
   assert.ok(
     opaque.length > 0,
     'the plate stays translucent without opacity: 1, and the connector line shows through the text',
@@ -563,12 +556,12 @@ test('the edge-label plate rule declares opacity: 1 inside the edge-label-bg con
 
   // The plate is a rectangle painted with `fill`; an opacity left off it is the
   // exact bug, so every fill-bearing plate rule in the container must say so.
-  for (const match of plateRules) {
-    if (!/fill\s*:\s*var\(--mermaid-edge-label-bg\)/.test(match[2])) continue;
+  for (const rule of plateRules) {
+    if (!/fill\s*:\s*var\(--mermaid-edge-label-bg\)/.test(rule.body)) continue;
     assert.match(
-      match[2],
+      rule.body,
       /opacity:\s*1\s*!important/,
-      `${match[1].trim()} fills the plate but leaves Mermaid's 0.5 opacity in force`,
+      `${rule.selectors.join(', ')} fills the plate but leaves Mermaid's 0.5 opacity in force`,
     );
   }
 });
