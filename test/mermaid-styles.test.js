@@ -25,16 +25,69 @@ import {
   requiredVariableNames,
   optionalVariableNames,
   missingVariables,
+  ruleList,
   selectorList,
   canonicalSelector,
   redeclaredSelectors,
   stripComments,
 } from '../src/core/mermaid-styles/mermaid-styles.js';
-import { NORMALIZE_VARIABLE } from '../src/core/mermaid-bootstrap.js';
+import { NORMALIZE_VARIABLE, THEME_VARIABLE, BOOTSTRAP_VARIABLES, GANTT_VARIABLES } from '../src/core/mermaid-bootstrap.js';
 import { bundledThemes, readTheme } from './helpers/themes.js';
 
 /** The block's own text. */
 const block = () => mermaidStylesheetSource();
+
+/**
+ * Bootstrap-owned property names, as a membership set.
+ *
+ * The list itself is owned by `mermaid-bootstrap.js`, because that module owns
+ * the reads; this is only the lookup shape the scans below want. A frozen
+ * array is what the module can honestly publish — `Object.freeze` does not
+ * stop `Set.add`, so a frozen `Set` would promise immutability it cannot keep.
+ */
+const bootstrapOwned = new Set(BOOTSTRAP_VARIABLES);
+
+/**
+ * The body of the `@container style(<variable>)` block, brace-matched.
+ *
+ * A property asserted inside an opt-in container is inert for every theme that
+ * does not define the variable, so the assertion has to say *where* the
+ * declaration lives, not merely that the text appears somewhere in the file.
+ *
+ * @param {string} variable  e.g. `--mermaid-edge-label-bg`.
+ * @returns {string}
+ */
+function containerBody(variable) {
+  const source = stripComments(block());
+  const prelude = '@container style(' + variable + ')';
+  const start = source.indexOf(prelude);
+  assert.notEqual(start, -1, `${variable} must gate a shared rule`);
+
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    else if (source[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, index);
+    }
+  }
+
+  assert.fail(`the ${variable} container is not closed`);
+}
+
+/**
+ * Does this selector's rightmost thing depend on the element being a shape?
+ *
+ * Used to state the actor rule the way the render does: `rect.actor` is the
+ * participant box, `text.actor` is its label, and a bare `.actor` is both.
+ *
+ * @param {string} selector
+ * @returns {boolean}
+ */
+function namesShape(selector) {
+  return /(^|[\s>+~])(rect|circle|ellipse|polygon|path|line)\.actor(?![-\w])/.test(selector);
+}
 
 // ---------------------------------------------------------------------------
 // The block is a real file with an interface
@@ -233,6 +286,28 @@ test('the OLED divergence is declared as optional variables, not extra selectors
   }
 });
 
+test('the OLED theme selects Mermaid’s dark theme and no light theme does', async () => {
+  // The theme selection is a palette entry, not a selector: the OLED sheet
+  // names a Mermaid theme and the browser program reads it. Every light theme
+  // omits it deliberately, so Mermaid keeps the base theme whose colours it
+  // was designed around.
+  for (const theme of await bundledThemes()) {
+    const css = await readTheme(theme, { stripComments: true });
+    const declared = new RegExp(`${THEME_VARIABLE}\\s*:\\s*([^;}]*)`).exec(css);
+
+    if (theme === 'oled-style.css') {
+      assert.ok(declared, 'the OLED theme must select a Mermaid theme explicitly');
+      assert.equal(declared[1].trim(), 'dark');
+    } else {
+      assert.equal(
+        declared,
+        null,
+        `${theme} must omit ${THEME_VARIABLE}; a light theme keeps Mermaid's base palette`,
+      );
+    }
+  }
+});
+
 test('every --mermaid-* variable read by the block or declared by a theme is in MERMAID_VARIABLES', async () => {
   const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
   const blockCss = stripComments(block());
@@ -244,9 +319,61 @@ test('every --mermaid-* variable read by the block or declared by a theme is in 
   for (const theme of await bundledThemes()) {
     const themeCss = await readTheme(theme, { stripComments: true });
     for (const match of themeCss.matchAll(/(--mermaid-[\w-]+)\s*:/g)) {
-      if (match[1] === NORMALIZE_VARIABLE) continue;
+      // Bootstrap-owned properties are read by the browser program at render
+      // time, not by the shared block, so they are recognised beside the
+      // block's contract rather than inside it. The set comes from the module
+      // that owns the reads, so it cannot drift from what the program reads.
+      if (bootstrapOwned.has(match[1])) continue;
       assert.ok(known.has(match[1]), `${theme} declares ${match[1]}, which is missing from MERMAID_VARIABLES`);
     }
+  }
+});
+
+test('bootstrap-owned properties are recognised beside the block contract, and a typo still fails', async () => {
+  // Acceptance for issues #18 and #19: the contract test has to know that some
+  // `--mermaid-*` names belong to the browser program rather than to the
+  // shared block. Both owners are named here, so a new bootstrap-owned
+  // property is one entry in the program and no edit in this test.
+  assert.deepEqual(
+    [...bootstrapOwned].sort(),
+    [
+      NORMALIZE_VARIABLE,
+      THEME_VARIABLE,
+      ...GANTT_VARIABLES.map((variable) => variable.name),
+    ].sort(),
+    'the bootstrap owns the normalisation opt-in, the theme selection and the Gantt bar fills',
+  );
+
+  // Recognition must not become a blanket exemption: a misspelling of the
+  // theme variable still fails, which is the failure this check exists for.
+  const known = new Set(MERMAID_VARIABLES.map((variable) => variable.name));
+  const typo = `${THEME_VARIABLE}-drak`;
+  assert.ok(!known.has(typo) && !bootstrapOwned.has(typo), `${typo} must not be recognised`);
+
+  // A misspelling of a Gantt variable must fail the same way; the bar-fill
+  // names are the newest members of the set, so they are the ones a typo is
+  // most likely to land on.
+  const ganttTypo = `${GANTT_VARIABLES[1].name}-drak`;
+  assert.ok(
+    !bootstrapOwned.has(ganttTypo),
+    `${ganttTypo} must not be recognised; the Adapter maps exact names`,
+  );
+
+  const typoDeclarations = [...stripComments(`:root { ${typo}: dark; }`).matchAll(/(--mermaid-[\w-]+)\s*:/g)]
+    .map((match) => match[1])
+    .filter((name) => !bootstrapOwned.has(name));
+  assert.deepEqual(typoDeclarations, [typo], 'a misspelled bootstrap property must still be reported');
+});
+
+test('the bootstrap-owned properties stay out of the required set', () => {
+  // A light theme must not be forced to declare either one: the theme
+  // selection defaults to Mermaid's own base theme, and normalisation changes
+  // its colours.
+  for (const name of BOOTSTRAP_VARIABLES) {
+    assert.ok(
+      !requiredVariableNames().includes(name),
+      `${name} is read by the browser program and must remain optional for a theme`,
+    );
   }
 });
 
@@ -260,6 +387,195 @@ test('the shared block preserves polyline, .labelLine, and .edgeLabel foreignObj
   ]) {
     assert.ok(selectors.has(expected), `mermaid.css must retain ${expected} for theme visual parity`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// The sequence-diagram ink split (issue #17)
+// ---------------------------------------------------------------------------
+
+test('actor fill and stroke rules target actor shape geometry, never actor text', () => {
+  // Mermaid writes `class="actor"` onto both the participant `<rect>` and the
+  // `<text>` label beside it. A bare `.actor` therefore paints the label with
+  // the shape's fill — the dark theme's near-white — and the label vanishes
+  // into its own box. The rules at fault are the ones declaring the shape-paint
+  // variables, not the ink rules, which name `text.actor` on purpose.
+  const paintRules = ruleList(block()).filter((rule) =>
+    /(fill|stroke)\s*:\s*var\(--mermaid-shape-(fill|stroke)\)/.test(rule.body),
+  );
+  assert.ok(paintRules.length > 0, 'the block must still paint actor shapes');
+
+  const actorSelectors = paintRules
+    .flatMap((rule) => rule.selectors)
+    .filter((selector) => selector.includes('.actor'));
+
+  assert.ok(actorSelectors.length > 0, 'actor geometry must still be painted');
+
+  for (const selector of actorSelectors) {
+    assert.ok(
+      namesShape(selector),
+      `${selector} paints every element classed .actor, including the label; name the shape`,
+    );
+    assert.ok(
+      !/(^|[\s>+~])text\.actor(?![-a-z])/.test(selector),
+      `${selector} targets the actor label; fill and stroke belong to the shape`,
+    );
+    assert.ok(
+      !/(^|[\s>+~])g\.actor-man(?![-a-z])/.test(selector),
+      `${selector} targets the actor-man group, whose children Mermaid strokes itself`,
+    );
+  }
+
+  // No shape-paint rule may carry the bare class, whatever declaration it
+  // sits under: `.actor` is the selector that matched rect and text alike.
+  for (const rule of paintRules) {
+    assert.ok(
+      !rule.selectors.includes('.mermaid svg .actor'),
+      'a bare .actor paints rect.actor and text.actor alike; scope it to the shape',
+    );
+  }
+
+  // And the label must still have ink of its own, or the fix is a different
+  // disappearance: Mermaid puts text.actor beside rect.actor as a sibling, so
+  // no descendant form can reach it.
+  const actorInk = ruleList(block()).find(
+    (rule) =>
+      rule.selectors.includes('.mermaid svg text.actor') &&
+      /fill:\s*var\(--mermaid-ink-on-shape\)\s*!important/.test(rule.body),
+  );
+  assert.ok(
+    actorInk,
+    'text.actor is a sibling of rect.actor; it needs an on-shape ink rule of its own',
+  );
+  assert.match(actorInk.body, /color:\s*var\(--mermaid-ink-on-shape\)\s*!important/);
+});
+
+test('a sequence note’s text, including nested spans, takes the on-shape ink', () => {
+  // Mermaid renders a note as `rect.note` plus a sibling `text.noteText`. The
+  // canvas-ink rule matches `text:not(.sequenceNumber)` and, because `:not()`
+  // contributes its argument's specificity, outscores a two-class one-type
+  // selector — so `.noteText` alone loses despite coming later. The rule has to
+  // state the element type, and state the nested span, or the inner text falls
+  // back to the canvas ink.
+  for (const expected of ['.mermaid svg text.noteText', '.mermaid svg text.noteText tspan']) {
+    const noteRule = ruleList(block()).find((rule) => rule.selectors.includes(expected));
+
+    assert.ok(noteRule, `${expected} must carry the on-shape ink for note text`);
+    assert.match(
+      noteRule.body,
+      /fill:\s*var\(--mermaid-ink-on-shape\)\s*!important/,
+      `${expected} sits on a filled note shape, so it needs the on-shape ink`,
+    );
+    assert.match(
+      noteRule.body,
+      /color:\s*var\(--mermaid-ink-on-shape\)\s*!important/,
+      `the colour property on ${expected} must follow the same ink as fill`,
+    );
+  }
+
+  // The canvas-ink list must not have quietly acquired .noteText back: an
+  // unconditional `text` match plus a later weaker .noteText is the bug.
+  const canvasInk = ruleList(block()).find((rule) =>
+    /fill:\s*var\(--mermaid-ink\)\s*!important/.test(rule.body),
+  );
+  assert.ok(canvasInk, 'the canvas-ink rule must exist');
+  assert.ok(
+    !canvasInk.selectors.some((selector) => /\.noteText(?![-a-z])/.test(selector)),
+    'note text sits on a shape and must not be in the canvas-ink list',
+  );
+});
+
+test('the loop box label text takes the on-shape ink, and the loop condition does not', () => {
+  // A loop draws a tab: `polygon.labelBox` filled with Mermaid's own light
+  // colour, with the word `loop` in a *sibling* `text.labelText`. On a dark
+  // page the canvas ink is near-white and the tab stays light, so the word
+  // disappears. `.loopText` — the condition drawn on the loop rectangle's
+  // transparent interior — must stay on the canvas ink, or it turns dark on a
+  // black page.
+  const onShapeLoop = ruleList(block()).find(
+    (rule) =>
+      rule.selectors.includes('.mermaid svg text.labelText') &&
+      /fill:\s*var\(--mermaid-ink-on-shape\)\s*!important/.test(rule.body),
+  );
+
+  assert.ok(
+    onShapeLoop,
+    'text.labelText is a sibling of polygon.labelBox; it needs an on-shape ink rule naming the element',
+  );
+  assert.match(onShapeLoop.body, /color:\s*var\(--mermaid-ink-on-shape\)\s*!important/);
+  assert.ok(
+    onShapeLoop.selectors.includes('.mermaid svg text.labelText tspan'),
+    'the spans inside the loop tab word need the same ink as their text element',
+  );
+
+  // The condition must not be dragged onto the shape ink.
+  for (const rule of ruleList(block())) {
+    if (!/fill:\s*var\(--mermaid-ink-on-shape\)/.test(rule.body)) continue;
+    assert.ok(
+      !rule.selectors.some((selector) => /\.loopText(?![-a-z])/.test(selector)),
+      `${rule.selectors.join(', ')} puts the loop condition on the shape ink; it is drawn on bare canvas`,
+    );
+  }
+
+  // And it must still be in the canvas-ink list, while .labelText must not.
+  const canvasInk = ruleList(block()).find((rule) =>
+    /fill:\s*var\(--mermaid-ink\)\s*!important/.test(rule.body),
+  );
+  assert.ok(canvasInk, 'the canvas-ink rule must exist');
+  assert.ok(
+    canvasInk.selectors.some((selector) => /\.loopText(?![-a-z])/.test(selector)),
+    'the loop condition sits on the page surface and needs the canvas ink',
+  );
+  assert.ok(
+    !canvasInk.selectors.some((selector) => /\.labelText(?![-a-z])/.test(selector)),
+    'loop tab text sits on a filled labelBox and must not be in the canvas-ink list',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The edge-label plate (issue #17)
+// ---------------------------------------------------------------------------
+
+test('the edge-label plate rule declares opacity: 1 inside the edge-label-bg container', () => {
+  // Mermaid emits `#mermaid-N .edgeLabel rect { opacity: 0.5 }` in its own
+  // generated <style>. Filling that rect with the theme's plate colour leaves
+  // the connector line visible through it, so the plate has to be forced fully
+  // opaque — and only inside the opt-in, or the light default would lose
+  // Mermaid's translucent chip.
+  const body = containerBody('--mermaid-edge-label-bg');
+
+  const plateRules = ruleList(body).filter((rule) =>
+    rule.selectors.some((selector) => /\.edgeLabel/.test(selector)),
+  );
+  assert.ok(plateRules.length > 0, 'the edge-label-bg container must style .edgeLabel');
+
+  const opaque = plateRules.filter((rule) => /opacity:\s*1\s*!important/.test(rule.body));
+  assert.ok(
+    opaque.length > 0,
+    'the plate stays translucent without opacity: 1, and the connector line shows through the text',
+  );
+
+  // The plate is a rectangle painted with `fill`; an opacity left off it is the
+  // exact bug, so every fill-bearing plate rule in the container must say so.
+  for (const rule of plateRules) {
+    if (!/fill\s*:\s*var\(--mermaid-edge-label-bg\)/.test(rule.body)) continue;
+    assert.match(
+      rule.body,
+      /opacity:\s*1\s*!important/,
+      `${rule.selectors.join(', ')} fills the plate but leaves Mermaid's 0.5 opacity in force`,
+    );
+  }
+});
+
+test('the edge-label plate opacity is scoped to the opt-in, not declared unconditionally', () => {
+  // Assertion in the negative direction: the declaration must not exist
+  // outside the container, or every theme — including the light default that
+  // deliberately keeps Mermaid's chip — would be forced opaque.
+  const outsideContainer = stripComments(block()).replace(containerBody('--mermaid-edge-label-bg'), '');
+
+  assert.ok(
+    !/\.edgeLabel[^{}]*\{[^{}]*opacity:\s*1/.test(outsideContainer),
+    'opacity: 1 on an edge-label plate outside the opt-in overrides themes that did not ask for a plate',
+  );
 });
 
 test('optional variables are not required of every theme', async () => {

@@ -39,11 +39,27 @@ function readFixture(name) {
  * @returns {number}
  */
 function countFences(markdown, language) {
+  return fenceBodies(markdown, language).length;
+}
+
+/**
+ * The body of every fenced block of a language, in source order.
+ *
+ * The companion to {@link countFences}: the count says how many there are and
+ * this says what is in them, so a test asserting "the fixture declares a Gantt
+ * case" reads the source through one fence parser rather than a second regex
+ * written beside it.
+ *
+ * @param {string} markdown
+ * @param {string} language
+ * @returns {Array<string>} Fenced bodies, without their fences.
+ */
+function fenceBodies(markdown, language) {
   const pattern = new RegExp(
-    `^ {0,3}\`{3,}[ \\t]*${language}[ \\t]*$`,
+    `^ {0,3}\`{3,}[ \\t]*${language}[ \\t]*\\n([\\s\\S]*?)^ {0,3}\`{3,}[ \\t]*$`,
     'gm',
   );
-  return (markdown.match(pattern) || []).length;
+  return [...markdown.matchAll(pattern)].map((match) => match[1]);
 }
 
 /**
@@ -301,5 +317,81 @@ test('the diagram fixture renders every fence it declares', async () => {
   assert.ok(
     blockContents(bodyHtml, 'math-display').length === 0,
     'the diagram fixture carries no block math',
+  );
+});
+
+test('the diagram fixture exercises the diagram families the theme selection reaches', async () => {
+  // The theme selection is passed to `mermaid.initialize` once, for every
+  // diagram in the document, so a family that no fixture declares is a family
+  // whose surfaces nobody checks. Gantt is the family that was missing: its
+  // bars and task rows are painted from Mermaid's own theme variables, not
+  // from the shared block's shape rules, so it is the one that shows whether
+  // the native dark theme actually took effect. The state diagram and pie
+  // chart are here for the same reason at "default shapes" scale.
+  const { markdown, bodyHtml } = await convertFixture('test-fixtures.md');
+  const declarations = blockContents(bodyHtml, 'mermaid');
+
+  for (const opener of ['gantt', 'stateDiagram', 'pie', 'flowchart', 'sequenceDiagram']) {
+    assert.ok(
+      declarations.some((source) => source.split('\n')[0].trim().startsWith(opener)),
+      `the fixture must declare a ${opener} diagram, or its surfaces go unchecked`,
+    );
+  }
+
+  assert.equal(
+    declarations.length,
+    countFences(markdown, 'mermaid'),
+    'every declared family must reach the document as its own container',
+  );
+});
+
+test('the diagram fixture pins the label-surface cases the normaliser decides', async () => {
+  // Every case below is a surface the old `.node`-only normaliser could not
+  // see, and each one is also a pure-function case in
+  // `mermaid-bootstrap.test.js`. The fixture is what makes them real DOM: if
+  // Mermaid changes the markup, the browser-free tests keep passing and the rendered
+  // check fails, which is the split the ticket asks for.
+  const { markdown } = await convertFixture('test-fixtures.md');
+
+  const fences = fenceBodies(markdown, 'mermaid');
+  const declares = (pattern) => fences.some((source) => pattern.test(source));
+
+  /** The task-name part of a Gantt task line, i.e. what precedes its colon. */
+  const taskNames = (source) =>
+    source
+      .split('\n')
+      .filter((line) => /^\s+\S/.test(line) && /:/.test(line) && /\d+d\s*$/.test(line))
+      .map((line) => line.slice(0, line.indexOf(':')).trim());
+
+  assert.ok(
+    fences.some((source) => /^gantt/.test(source) && /:done/.test(source) && /:active/.test(source)),
+    'the Gantt case must declare a done task and an active task, so both bar fills are painted',
+  );
+  assert.ok(
+    fences.some((source) => {
+      if (!/^gantt/.test(source)) return false;
+      const names = taskNames(source);
+      // An inside-bar label needs a task short enough to hold its name, and an
+      // outside-bar label needs one long enough to overflow it. Both must be
+      // in the same chart or the two surfaces are never compared in one render.
+      return names.some((name) => name.length < 20) && names.some((name) => name.length > 45);
+    }),
+    'the Gantt case must carry a short task (label inside the bar) and a long one (label outside it)',
+  );
+
+  assert.ok(declares(/^classDiagram/), 'the class case pins the non-painting group wrapper');
+  assert.ok(
+    fences.some((source) => /^stateDiagram/.test(source) && /state \w+ \{[\s\S]*state \w+ \{/.test(source)),
+    'the state case must nest one composite state inside another',
+  );
+  assert.ok(
+    fences.some(
+      (source) => /fill:#[0-9a-f]{6}/i.test(source) && /fill:#f[0-9a-f]{5}/i.test(source),
+    ),
+    'the styled-fill case must declare both a dark and a light author fill',
+  );
+  assert.ok(
+    fences.some((source) => /<br\/?>/.test(source) && /-->/.test(source)),
+    'the edge-label case must declare a multi-line edge label',
   );
 });

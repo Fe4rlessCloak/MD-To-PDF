@@ -32,7 +32,11 @@ import {
   MERMAID_STYLESHEET_NAME,
   mermaidStylesheetSource,
 } from './mermaid-styles/mermaid-styles.js';
-import { pageGeometry, PAGE_GEOMETRY_STYLESHEET_NAME } from './page-geometry.js';
+import {
+  pageGeometry,
+  PAGE_GEOMETRY_STYLESHEET_NAME,
+  PAGE_GEOMETRY_VARIABLES,
+} from './page-geometry.js';
 import { KATEX_STYLESHEET_URL } from './katex-bootstrap.js';
 
 /**
@@ -121,11 +125,12 @@ export function neutralizeClosingTag(source, tagName) {
  * program never depends on the spelling of a flag.
  *
  * @param {Object} params
- * @param {string} params.entry    Entry-point function name, e.g. `runMermaidBootstrap`.
- * @param {string} params.source   The program's ESM source text.
+ * @param {string} params.entry      Entry-point function name, e.g. `runMermaidBootstrap`.
+ * @param {string} params.source     The program's ESM source text.
+ * @param {string} [params.extraArgs] Optional extra properties merged into the entry call object.
  * @returns {string} A complete `<script type="module">` element.
  */
-function bootstrapScript({ entry, source }) {
+function bootstrapScript({ entry, source, extraArgs = '' }) {
   const program = neutralizeClosingTag(source, 'script');
 
   return `
@@ -133,7 +138,7 @@ function bootstrapScript({ entry, source }) {
 ${READINESS_SOURCE}
 ${program}
 
-await ${entry}({ flags: RF, publish: publishFlag, fatalReportIndex: ${FATAL_REPORT_INDEX} });
+await ${entry}({ flags: RF, publish: publishFlag, fatalReportIndex: ${FATAL_REPORT_INDEX}${extraArgs ? `, ${extraArgs}` : ''} });
 </script>
 `;
 }
@@ -146,6 +151,7 @@ function mermaidBootstrapScript() {
   return bootstrapScript({
     entry: 'runMermaidBootstrap',
     source: mermaidBootstrapSource(),
+    extraArgs: `pageBackgroundVariable: ${JSON.stringify(PAGE_GEOMETRY_VARIABLES.background)}`,
   });
 }
 
